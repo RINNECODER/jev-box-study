@@ -226,7 +226,7 @@ falsely flagged. Planted-error documents: all caught. Cost is about $0.02 per
 image (about 170-250 calls, about 0.5-0.6M input tokens at $0.042 per million).
 
 Prompts: [`code/prompts/v6_check.js`](code/prompts/v6_check.js). Client
-pipeline: [`code/app/index.html`](code/app/index.html). Raw scores:
+pipeline: [`app/public/index.html`](app/public/index.html). Raw scores:
 [`data/scores/`](data/scores/) (`v9`, `v12`, `v14`, `v15`, `v16`).
 
 ### The v6 pipeline

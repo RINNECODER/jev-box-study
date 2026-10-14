@@ -6,7 +6,7 @@ description: Detect AI-image or video hallucinations (garbled text, contradictio
 # Detect AI-image hallucinations with Jev (images + Box)
 
 Recipe distilled from the jev-box-study (v1 to v6). Reference implementation:
-`code/prompts/v6_check.js` (server prompts and retries) and `code/app/index.html`
+`code/prompts/v6_check.js` (server prompts and retries) and `app/public/index.html`
 (client pipeline: cropping, windows, drawing boxes). Read them before writing code.
 
 Measured result of v6 on a 6-error AI office image: 4/6 caught in 3/3 runs,
