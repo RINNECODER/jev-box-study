@@ -107,6 +107,15 @@
   .actions svg { width: 12px; height: 12px; }
   .cost { color: var(--muted); font-size: 12px; margin-top: -8px; font-variant-numeric: tabular-nums; }
   .seen { width: 100%; color: var(--muted); font-size: 12.5px; margin-bottom: 4px; }
+  .modal-bg { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.55); }
+  .modal { max-width: 460px; width: 100%; padding: 26px 24px 22px; }
+  .modal h2 { margin: 0 0 10px; font-size: 22px; letter-spacing: -.01em; }
+  .modal p { margin: 0 0 20px; color: var(--muted); }
+  .modal-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--edge);
+    background: rgba(255,255,255,.06); color: var(--text); font: 600 13.5px/1 inherit; font-family: inherit; text-decoration: none; cursor: pointer; }
+  .btn:hover { background: rgba(255,255,255,.12); }
+  .btn.primary { background: var(--text); color: #111216; border-color: var(--text); }
   .spots { margin: 0; padding-left: 22px; width: 100%; font-size: 13.5px; display: grid; gap: 4px; }
   .spots li::marker { color: var(--red); font-weight: 700; }
   .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin: 4px 0 6px; width: 100%; }
@@ -330,6 +339,25 @@ async function loadVideo(f, onFrame) {
   } finally { URL.revokeObjectURL(v.src); }
 }
 
+// Shown once when the demo's TypeSafe key runs out of credits (server answers 402 out_of_credits).
+function showOutOfCredits() {
+  if (document.getElementById("credits")) return;
+  const d = document.createElement("div");
+  d.id = "credits"; d.className = "modal-bg";
+  d.innerHTML = `<div class="modal glass" role="dialog" aria-modal="true" aria-labelledby="credits-title">
+    <h2 id="credits-title">Sorry, I ran out of credits</h2>
+    <p>This demo runs on my own TypeSafe key, and it's used up for now. You can run the exact same setup yourself: the code is open source, and you only need your own TypeSafe API key.</p>
+    <div class="modal-actions">
+      <a class="btn primary" href="https://github.com/RINNECODER/jev-box-study/tree/master/app" target="_blank" rel="noopener">Run it yourself on GitHub</a>
+      <a class="btn" href="https://console.typesafe.ai" target="_blank" rel="noopener">Get a TypeSafe key</a>
+      <button class="btn" type="button" data-close>Close</button>
+    </div></div>`;
+  d.addEventListener("click", e => { if (e.target === d || e.target.hasAttribute("data-close")) d.remove(); });
+  document.addEventListener("keydown", function esc(e) { if (e.key === "Escape") { d.remove(); document.removeEventListener("keydown", esc); } });
+  document.body.append(d);
+  d.querySelector(".primary").focus();
+}
+
 // At most 6 requests in flight per page, across all files being scanned (Jev rate-limits bursts).
 let inflight = 0;
 const waiting = [];
@@ -342,6 +370,7 @@ async function api(body) {
 async function apiOnce(body) {
   const r = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({ error: `Server error ${r.status}` }));
+  if (r.status === 402 && j.error === "out_of_credits") { showOutOfCredits(); throw new Error("Out of credits for now. See the popup to run it yourself."); }
   if (!r.ok) throw new Error(j.error || `Server error ${r.status}`);
   return j;
 }

@@ -155,7 +155,13 @@ async function jev(images, questions) {
     if (r.ok || attempt >= 4 || !(r.status === 429 || r.status >= 500)) break;
     await new Promise(ok => setTimeout(ok, 800 * 2 ** attempt + Math.random() * 400));
   }
-  if (!r.ok) throw new Error(`Jev ${r.status}: ${(await r.text()).slice(0, 300)}`);
+  if (!r.ok) {
+    const text = (await r.text()).slice(0, 300);
+    const e = new Error(`Jev ${r.status}: ${text}`);
+    // Out of credits: TypeSafe doesn't document a dedicated code, so treat 402 or a billing-worded error as it.
+    if (r.status === 402 || /credit|balance|billing|payment|insufficient|quota|funds/i.test(text)) e.outOfCredits = true;
+    throw e;
+  }
   const j = await r.json();
   Object.defineProperty(j.answers, "usage", { value: j.usage });  // token usage, for the UI's cost meter
   return j.answers;
@@ -234,6 +240,7 @@ export default async function handler(req, res) {
     return res.json({ list: split(TEMPORAL, ans.pair) });
   } catch (e) {
     console.error(e);
+    if (e.outOfCredits) return res.status(402).json({ error: "out_of_credits" });
     return res.status(502).json({ error: "The detector is unavailable right now." });
   }
 }

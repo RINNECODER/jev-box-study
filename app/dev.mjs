@@ -3,6 +3,14 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import handler from "./api/check.js";
 
+// Local-only: FAKE_JEV_STATUS=402 makes Jev calls fail like an exhausted account, to preview the out-of-credits popup.
+if (process.env.FAKE_JEV_STATUS) {
+  const real = globalThis.fetch;
+  globalThis.fetch = (url, ...a) => String(url).startsWith("https://api.typesafe.ai")
+    ? Promise.resolve(new Response(JSON.stringify({ detail: "Insufficient credits" }), { status: +process.env.FAKE_JEV_STATUS }))
+    : real(url, ...a);
+}
+
 http.createServer(async (req, res) => {
   if (req.url.startsWith("/api/check")) {
     let raw = ""; for await (const c of req) raw += c;
