@@ -139,6 +139,54 @@ threshold. Raw data: [`data/scores/v4_all.json`](data/scores/v4_all.json).
   than 60% of the image discarded), plus overlapping 3x3 grid cells for
   coverage, plus a pinpoint box inside a flagged cell.
 
+## v5: geometry vs meaning
+
+Office image = the user's AI image "Overlapping Office Reports on a Desk".
+Raw data: [`data/scores/v4b_all.json`](data/scores/v4b_all.json),
+[`data/scores/v5_docs.json`](data/scores/v5_docs.json). Prompts:
+[`code/prompts/v5_check.js`](code/prompts/v5_check.js).
+
+1. **New page-list option "Text contradicts its data"** caught the Marketing
+   page at 0.95-0.97 (the takeaways say Paid Search drove the most leads and
+   Display underperformed, but the chart shows Display highest). Re-run on all
+   sets at 0.8: user image 1/1, planted 2/2, real 2/26 (Daft Punk helmets
+   "glasses merge" 0.85, plus the street sign). The same helmets scored 0.77 in
+   the previous run, so run-to-run variance is several points.
+2. **Jev reads layout semantically, not geometrically.** On a crop of a table,
+   "which Variance value is on the Marketing row?" gave -2.2% (0.99): correct
+   for Marketing mathematically, though -0.7% is drawn on that line. "On which
+   paper is the word 'Total' printed?" gave "the table page" 0.87-0.96, which is
+   wrong (it is printed on the IT Security Brief lying on top), while "which
+   paper is on top?" gave IT Security Brief 1.00 (correct). The yes/no "rows
+   line up" scored 0.89-0.96 on misaligned tables, the same as clean ones
+   (0.92-0.98). Whole-table views let Jev mentally fix the layout.
+3. **Ground-truth correction.** One table the assistant had labeled misaligned
+   (Quarterly Financial Review) is actually fine: its apparent offset was paper
+   tilt, and deskewed it reads perfectly (Jev said so). Verify labels by
+   deskewing before blaming the model.
+4. **Technique that works: row strips.** The code only cuts the image; Jev does
+   the judging. Cut a table into about 6 thin overlapping horizontal strips,
+   rotate through angles (0, +/-4, +/-8; stop early when clean), and ask a
+   Choice "describe only what is physically inside this strip" (label with its
+   values / label with no values / values with no label / header / between
+   rows). Best-angle mean confidence: clean tables 0.89-1.00 (Marketing 1.00,
+   budget 0.98, report 0.97, Orion 0.93, Quarterly 0.90, synthetic clean table
+   rotated 4 degrees 0.89); truly misaligned 0.69-0.74 (Facilities Status column
+   shifted a row; Client Feedback columns stepping down). In the full pipeline
+   with Jev-found table boxes: Facilities flagged (0.69), Client Feedback missed
+   (0.81, a looser box than the hand crop's 0.74), clean tables 0.92-0.97, and a
+   bar chart mistaken for a table 0.78. Mapping:
+   misalignment = clamp((0.88 - coherence) / 0.15).
+5. **Layering is not reliably detectable.** The "Total" from the lower table
+   printed on top of the IT Security Brief. The isolation question "does
+   everything on the top sheet belong to it?" gave 0.81 "stray content" on a
+   tight hand crop, 0.53 on a looser crop, 0.18-0.39 when Jev boxes "the sheet
+   on top" itself (it picks the wrong sheet), and 0.40 in a 300 px sliding-window
+   sweep (no window at or above 0.6 out of 60). Clean sheets scored 0.73-0.99
+   "own content". Known limit.
+6. **Background corrupted characters:** weak signal only (0.44-0.56 versus
+   0.07-0.23 on clean text).
+
 ## Limitations
 
 - Small, hand-picked sets: 8 real photos, 26 real images (some Wikimedia
@@ -153,7 +201,7 @@ threshold. Raw data: [`data/scores/v4_all.json`](data/scores/v4_all.json).
 ## Inspect the evidence
 
 - Prompts: [`code/prompts/`](code/prompts/) - `v1_check.js`, `v2_check.js`,
-  `v4_check.js` (current).
+  `v4_check.js`, `v5_check.js` (current).
 - Harness: [`code/harness/`](code/harness/) - `browser_eval.mjs` (headless
   Chromium against the real page), `run.py`, `fetch.py`, `fmt_test.mjs`
   (question-format test), `find_test.py`.
