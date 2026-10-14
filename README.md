@@ -21,7 +21,102 @@ Observations from October 14, 2026. Built with Claude Code by
 > These are small, hand-picked evaluations on a handful of images, not a
 > benchmark or an accuracy score.
 
-## Headline findings
+## v6: the version that works
+
+Ground truth: the author (a human) found 6 hallucinations in the AI office
+image "Overlapping Office Reports on a Desk":
+
+1. Truncated title "Marketing Campai".
+2. Absurd sentence: "the office printer turned into a purple octopus and
+   approved the quarterly budget".
+3. Marketing takeaways contradict their chart (text says Paid Search drove most
+   leads and Display underperformed; the chart shows Display highest).
+4. Client Feedback table columns step down (5 rows of numbers vs 4 labels).
+5. Facilities table Status column shifted a row.
+6. The word "Total" from the Orion table printed on top of the IT Security
+   Brief sheet covering it.
+
+**Final v6 result (production):** 4 of 6 caught in 3 of 3 runs: #1, #2, #3 and
+#6 (the layering word boxed exactly). #4 and #5 (table misalignment) were not
+caught. Real photos (26 Wikimedia Commons, including busy scenes): 0 of 26
+falsely flagged. Planted-error documents: all caught. Cost is about $0.02 per
+image (about 170-250 calls, about 0.5-0.6M input tokens at $0.042 per million).
+
+Prompts: [`code/prompts/v6_check.js`](code/prompts/v6_check.js). Client
+pipeline: [`code/app/index.html`](code/app/index.html). Raw scores:
+[`data/scores/`](data/scores/) (`v9`, `v12`, `v14`, `v15`, `v16`).
+
+### The v6 pipeline
+
+- **(a) Neutral discovery.** Targeted Box searches on the whole image ("one
+  single sheet of paper (just one, not a group)", table, object, person; boxes
+  over 60% of the image discarded; each find masked), plus close-up windows at
+  two scales: 3x3 coarse cells (keep a chart next to the text describing it)
+  and about 24 overlapping square windows of 26% of the long side (make small
+  text readable). Each scale alone missed one error type.
+- **(b) One flat list per item, no object categories** (the author's decision;
+  the classifier's run-to-run flips were costing catches). Choice: "everything
+  is correct" (real-photo look-alikes named) + 28 hallucination types + "can't
+  tell". An item is flagged when the hallucination options sum to at least the
+  threshold. Windows only judge crops that are at least 30% "mostly text" (a
+  noul asked in the same call); objects and people are judged on their own
+  boxes.
+- **(c) Jev is not deterministic.** The identical crop asked 5 times gave layer
+  0.57-0.67 and contradiction 0.39-0.49. Anything within 0.2 of the bar is
+  asked 2 more times on the same crop and averaged. Re-framing the crop instead
+  made it worse (0.88 to 0.77).
+- **(d) Two-format confirmation.** A flat-list flag is re-asked as a specific
+  yes/no noul with structured instructions naming normal look-alikes
+  (helmets/masks/costumes, decorative fonts, real brand names, other languages,
+  partly hidden/angled/blurred hands, curved reflections). Final =
+  mean(list, confirm). Real-photo false flags went from 4/26 to 0/26 (Daft Punk
+  helmets "broken glasses": list 0.83, confirm 0.07) while true catches stayed
+  0.82-0.94.
+- **(e) Layering.** Two differently worded questions ("does everything on the
+  top sheet belong to it?" and "is anything from the lower sheet visible on
+  top?") are averaged on the fixed window grid; score = clamp((mean - 0.3) /
+  0.4). Window size matters: about 300 px windows split the spot (max 0.40),
+  about 400 px (26% of the long side) catch it (0.64-0.69); real photos max
+  0.40. A flagged window is pinpointed with Box "the word or table line that
+  belongs to a lower sheet but is printed on top of the sheet covering it"
+  (lands on the word, confidence about 0.6).
+- **(f)** Same-type boxes that touch are merged (the tighter kept), fixing
+  duplicate spots.
+- **(g)** The server retries Jev 429/5xx with backoff; the browser caps 6
+  in-flight requests (bursts were rate-limited).
+- **(h) Table row-strip check** kept, behind a Jev "is this a table?" gate
+  (0.8 or more) and a minimum box size (at least 12% width and 8% height; tiny
+  slivers read incoherent and caused false flags). Tables are searched on the
+  whole image and inside each found page.
+
+### Tables: a Jev 1.14 perception limit
+
+Six techniques, all measured:
+
+- Whole-table yes/no "rows line up": misaligned 0.89-0.96 vs clean 0.92-0.98.
+- Row strips: box-sensitive (Facilities 0.69 with one box, 0.81-0.84 with
+  others; Client Feedback 0.74 hand-cropped, 0.81-0.90 otherwise).
+- Two strip questions averaged: clean Orion 0.82 equals misaligned Facilities
+  0.82.
+- Border-line questions: 0.65-0.93 "straight" on both.
+- Zoomed vertical bands: 0.02-0.20 "shifted" on all.
+
+Jev reads layout semantically: asked which Variance value is on the Marketing
+row, it answered -2.2% (mathematically right) while -0.7% is drawn there. Row
+and column offsets are a perception limit of Jev 1.14; the content of those
+tables is correct, so meaning-based checks cannot see it.
+
+### Process lessons
+
+- Verify ground truth by deskewing (the assistant mislabeled a tilted but
+  correct table).
+- Avoid copying test-image wording into prompts (an "object coming to life"
+  example was removed).
+- One "find anything" box on a whole busy image returns one giant box.
+- A Box with no "none" option always returns something, so verify every box
+  with a second question.
+
+## Headline findings (earlier iterations)
 
 **What worked**
 
@@ -201,7 +296,7 @@ Raw data: [`data/scores/v4b_all.json`](data/scores/v4b_all.json),
 ## Inspect the evidence
 
 - Prompts: [`code/prompts/`](code/prompts/) - `v1_check.js`, `v2_check.js`,
-  `v4_check.js`, `v5_check.js` (current).
+  `v4_check.js`, `v5_check.js`, `v6_check.js` (current).
 - Harness: [`code/harness/`](code/harness/) - `browser_eval.mjs` (headless
   Chromium against the real page), `run.py`, `fetch.py`, `fmt_test.mjs`
   (question-format test), `find_test.py`.
@@ -212,6 +307,25 @@ Raw data: [`data/scores/v4b_all.json`](data/scores/v4b_all.json),
 Images are intentionally not included; `code/harness/fetch.py` re-downloads
 the Wikimedia ones from the attribution lists. Set `TYPESAFE_API_KEY` in your
 environment to run anything; never commit it.
+
+## Skills
+
+Two [Agent Skills](https://docs.claude.com/en/docs/claude-code/skills) distilled
+from this study live in [`skills/`](skills/):
+
+- [`jev-image-hallucination`](skills/jev-image-hallucination/SKILL.md): detect
+  AI-image/video hallucinations with Jev (images + Box), the v6 recipe.
+- [`jev-vision-eval`](skills/jev-vision-eval/SKILL.md): evaluate a Jev vision
+  pipeline honestly.
+
+Install for Claude Code by copying the folders into `~/.claude/skills/`:
+
+```sh
+cp -R skills/jev-image-hallucination skills/jev-vision-eval ~/.claude/skills/
+```
+
+Any Agent-Skills-compatible agent can load the same folders from its own
+skills directory.
 
 ## Scope and license
 

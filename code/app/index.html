@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hallucination Check</title>
+<meta name="description" content="Drop an image or video. Jev finds AI hallucinations (fake text, wrong numbers, broken hands) and boxes where they are.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://hallucination-check.vercel.app/">
+<meta property="og:title" content="Hallucination Check">
+<meta property="og:description" content="Drop an image or video. Jev finds AI hallucinations and boxes where they are.">
+<meta property="og:image" content="https://hallucination-check.vercel.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:creator" content="@0xRinne">
+<meta name="twitter:title" content="Hallucination Check">
+<meta name="twitter:description" content="Drop an image or video. Jev finds AI hallucinations and boxes where they are.">
+<meta name="twitter:image" content="https://hallucination-check.vercel.app/og.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect x=%224%22 y=%224%22 width=%2224%22 height=%2224%22 rx=%226%22 fill=%22none%22 stroke=%22%23ff5a52%22 stroke-width=%223%22/%3E%3C/svg%3E">
+<style>
+  :root {
+    --text: #f5f7ff; --muted: rgba(245,247,255,.62);
+    --glass: rgba(255,255,255,.06); --glass-2: rgba(255,255,255,.10);
+    --edge: rgba(255,255,255,.14); --red: #ff5a52; --amber: #ffb547; --green: #4fe0a0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--text);
+    background: radial-gradient(1200px 600px at 50% -10%, #2a2d36, transparent 70%), #111216;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  }
+
+  .glass {
+    background: var(--glass); border: 1px solid var(--edge); border-radius: 22px;
+    backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%);
+    box-shadow: 0 10px 40px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 48px 16px 80px; }
+  h1 { font-size: clamp(28px, 5vw, 40px); font-weight: 650; letter-spacing: -.02em; margin: 0 0 24px; }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  .def { color: var(--muted); font-size: 12.5px; opacity: .8; margin: 0 0 28px; max-width: 70ch; }
+
+  #drop {
+    display: grid; place-items: center; text-align: center; padding: 44px 20px; cursor: pointer;
+    transition: background .2s, transform .2s;
+  }
+  #drop:hover, #drop.over { background: var(--glass-2); transform: translateY(-2px); }
+  #drop svg { width: 44px; height: 44px; opacity: .9; margin-bottom: 10px; }
+  #drop b { font-size: 18px; font-weight: 600; }
+  #drop span { color: var(--muted); font-size: 13px; }
+
+  .opts { display: flex; justify-content: flex-end; padding: 10px 6px 0; font-size: 12px; color: var(--muted); }
+  .opts label { display: flex; align-items: center; gap: 8px; }
+  input[type=range] { accent-color: #fff; width: 96px; height: 14px; margin: 0; }
+  #thv { min-width: 3ch; font-variant-numeric: tabular-nums; color: var(--text); }
+
+  #results { display: grid; gap: 18px; margin-top: 26px; }
+  .card { padding: 18px; display: grid; gap: 14px; animation: rise .35s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  .head { display: flex; align-items: center; gap: 14px; }
+  .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .score { text-align: right; }
+  .score b { font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+  .score small { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .bar { height: 6px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; }
+  .bar > div { height: 100%; width: 0; border-radius: 6px; background: #fff; transition: width .4s; }
+  .status { color: var(--muted); font-size: 13px; }
+  .err { color: #ffb3ae; font-size: 13px; }
+
+  .body { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .body > :first-child { position: sticky; top: 16px; }
+  @media (max-width: 720px) { .body { grid-template-columns: 1fr; } .body > :first-child { position: static; } }
+  .spotwrap { margin-top: 16px; }
+  .spotwrap .spots.two { columns: 2 220px; column-gap: 24px; display: block; }
+  .spotwrap .spots li { break-inside: avoid; margin-bottom: 4px; }
+  button.chip { font: inherit; color: var(--text); cursor: pointer; }
+  button.chip.more:hover { opacity: .9; background: rgba(255,255,255,.14); }
+  .chip.low { opacity: .7; }
+  .view { border-radius: 14px; overflow: hidden; background: rgba(0,0,0,.25); }
+  .view img { display: block; width: 100%; height: auto; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+  .chip { padding: 6px 11px; border-radius: 999px; background: rgba(255,255,255,.10); border: 1px solid var(--edge); font-size: 13px; }
+  .chip.hit { background: rgba(255,90,82,.22); border-color: rgba(255,90,82,.55); }
+  .chip.quiet { opacity: .55; }
+  .chip em { font-style: normal; opacity: .7; margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .sig { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; padding: 8px 16px 40px; }
+  .ghicon { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.08); border: 1px solid var(--edge); flex: none; }
+  .ghicon svg { width: 26px; height: 26px; }
+  .xcard { display: flex; align-items: center; gap: 14px; padding: 12px 14px 12px 12px; border-radius: 18px;
+    color: var(--text); text-decoration: none; max-width: 100%; transition: transform .2s, background .2s; }
+  .xcard:hover { transform: translateY(-2px); background: var(--glass-2); }
+  .xcard img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 1px solid var(--edge); flex: none; }
+  .who { display: grid; line-height: 1.25; min-width: 0; }
+  .who small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .who b { font-size: 16px; font-weight: 650; }
+  .handle { color: var(--muted); font-size: 13px; }
+  .follow { display: inline-flex; align-items: center; gap: 6px; margin-left: 18px; padding: 8px 14px; border-radius: 999px;
+    background: var(--text); color: #111216; font-size: 13px; font-weight: 650; flex: none; }
+  .follow svg { width: 13px; height: 13px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .actions button, .actions a { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px;
+    border: 1px solid var(--edge); background: rgba(255,255,255,.06); color: var(--text); font: 600 12.5px/1 inherit;
+    font-family: inherit; text-decoration: none; cursor: pointer; }
+  .actions button:hover, .actions a:hover { background: rgba(255,255,255,.12); }
+  .actions .x { background: var(--text); color: #111216; border-color: var(--text); }
+  .actions svg { width: 12px; height: 12px; }
+  .cost { color: var(--muted); font-size: 12px; margin-top: -8px; font-variant-numeric: tabular-nums; }
+  .seen { width: 100%; color: var(--muted); font-size: 12.5px; margin-bottom: 4px; }
+  .spots { margin: 0; padding-left: 22px; width: 100%; font-size: 13.5px; display: grid; gap: 4px; }
+  .spots li::marker { color: var(--red); font-weight: 700; }
+  .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin: 4px 0 6px; width: 100%; }
+
+  .strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .strip button { position: relative; flex: 0 0 auto; padding: 0; border: 2px solid transparent; border-radius: 10px; overflow: hidden; background: none; cursor: pointer; }
+  .strip button.on { border-color: #fff; }
+  .strip img { display: block; height: 58px; }
+  .strip .t { position: absolute; left: 4px; bottom: 3px; font-size: 10px; text-shadow: 0 1px 3px #000; }
+  .strip .dot { position: absolute; right: 5px; top: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 6px var(--red); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Hallucination Check</h1>
+
+  <div id="drop" class="glass" tabindex="0">
+    <div>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      <div><b>Drop files or click to choose</b></div>
+      <span>Images (JPG, PNG, HEIC, WebP…) and videos (MP4, MOV, WebM). Files stay in your browser; only small frames are sent for analysis.</span>
+    </div>
+    <input id="file" type="file" multiple accept="image/*,video/*" hidden>
+  </div>
+
+  <div class="opts">
+    <label>Sensitivity <input id="th" type="range" min="0" max="1" step="0.05" value="0.5"> <span id="thv">50%</span></label>
+  </div>
+
+  <section id="results"></section>
+</main>
+<footer class="sig">
+  <a class="xcard glass" href="https://x.com/intent/follow?screen_name=0xRinne" target="_blank" rel="noopener">
+    <img src="/avatar.jpg" alt="" width="52" height="52">
+    <span class="who"><small>Made by</small><b>0xRinne</b><span class="handle">@0xRinne</span></span>
+    <span class="follow" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Follow</span>
+  </a>
+  <a class="xcard glass gh" href="https://github.com/RINNECODER/jev-box-study" target="_blank" rel="noopener">
+    <span class="ghicon" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg></span>
+    <span class="who"><small>Findings report</small><b>Jev Box study</b><span class="handle">What worked, what didn't, and why</span></span>
+    <span class="follow" aria-hidden="true">Read</span>
+  </a>
+</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const drop = $("#drop"), file = $("#file");
+let LABELS = {}, GROUPS = {}, CHECK_GROUP = {}, PRICE = 0.042;  // filled from GET /api/check
+const SRC_MAX = 4096, SECTION_PX = 700, MAX_SECTIONS = 3, CROP_MIN_LONG = 1024;
+const FIND_PLAN = [["page", 8], ["table", 6], ["object", 6], ["person", 6]];
+// Misaligned-table check: angles tried (level first) and the coherence that counts as "reads cleanly".
+const ROW_ANGLES = [0, -4, 4, -8, 8], ROW_STRIPS = 6, ROW_CLEAN = 0.85;
+// Layering check score = clamp((mean of the two layer questions - 0.3) / 0.4).
+const REPEATS = 2, NEAR = 0.2;  // near-the-bar answers get 2 more asks, averaged  // near-the-bar answers get 2 more asks, averaged
+const area = b => (b.right - b.left) * (b.bottom - b.top);
+const META = fetch("/api/check").then(r => r.json()).then(j => {
+  GROUPS = j.groups; PRICE = j.price_per_mtok ?? PRICE;
+  for (const [k, v] of Object.entries(j.checks)) { LABELS[k] = v.label; CHECK_GROUP[k] = v.group; }
+  Object.assign(LABELS, j.temporal);
+}).catch(() => {});
+const MIN_SIDE = 280, MAX_SIDE = 1568, WORKERS = 4;
+
+// Higher sensitivity = lower defect probability needed to flag (see start()).
+$("#th").oninput = e => $("#thv").textContent = Math.round(e.target.value * 100) + "%";
+drop.onclick = () => file.click();
+drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") file.click(); };
+file.onchange = () => { [...file.files].forEach(start); file.value = ""; };
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => [...e.dataTransfer.files].forEach(start));
+
+const costText = m => `${m.calls} calls · ${(m.tokens / 1000).toFixed(1)}k tokens · $${(m.tokens / 1e6 * PRICE).toFixed(4)}`;
+const color = p => p >= .7 ? "var(--red)" : p >= .4 ? "var(--amber)" : "var(--green)";
+
+// Fit any source into Jev's limits: <=1568 per side, >=280 per side (upscale, then pad extreme aspect ratios).
+function fit(src, w, h) {
+  let s = Math.min(1, MAX_SIDE / Math.max(w, h));
+  if (Math.min(w, h) * s < MIN_SIDE) s = Math.min(MIN_SIDE / Math.min(w, h), MAX_SIDE / Math.max(w, h));
+  const dw = Math.max(1, Math.round(w * s)), dh = Math.max(1, Math.round(h * s));
+  const c = document.createElement("canvas");
+  c.width = Math.max(dw, MIN_SIDE); c.height = Math.max(dh, MIN_SIDE);
+  const g = c.getContext("2d");
+  g.fillStyle = "#000"; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(src, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
+  return c;
+}
+const b64 = c => c.toDataURL("image/jpeg", 0.9).split(",")[1];
+
+async function loadImage(f) {
+  let blob = f;
+  if (/\.hei[cf]$/i.test(f.name) || /hei[cf]/.test(f.type)) {
+    try { return await bitmapCanvas(f); } catch {}  // Safari decodes HEIC natively
+    if (!window.heic2any) await new Promise((ok, bad) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
+      s.onload = ok; s.onerror = () => bad(new Error("Couldn't load the HEIC converter"));
+      document.head.append(s);
+    });
+    blob = await heic2any({ blob: f, toType: "image/jpeg", quality: 0.92 });
+  }
+  return bitmapCanvas(blob);
+}
+// Keep a high-resolution copy (<= 4096 px) so each found item can be checked on a sharp crop.
+async function bitmapCanvas(blob) {
+  let bm;
+  try { bm = await createImageBitmap(blob, { imageOrientation: "from-image" }); }
+  catch { throw new Error("This browser can't read that image. Try JPG or PNG."); }
+  return { full: fit(bm, bm.width, bm.height), src: scaledCopy(bm, bm.width, bm.height) };
+}
+function scaledCopy(src, w, h) {
+  const s = Math.min(1, SRC_MAX / Math.max(w, h)), c = document.createElement("canvas");
+  c.width = Math.round(w * s); c.height = Math.round(h * s);
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+// Crop a found item (box fractions) with 25% padding for context, then fit to Jev's limits.
+function padded(b) {
+  const bw = b.right - b.left, bh = b.bottom - b.top, px = Math.max(0.03, bw * 0.25), py = Math.max(0.03, bh * 0.25);
+  return { left: Math.max(0, b.left - px), top: Math.max(0, b.top - py), right: Math.min(1, b.right + px), bottom: Math.min(1, b.bottom + py) };
+}
+function cropCanvas(src, b) {
+  const { left: l, top: t, right: r, bottom: btm } = padded(b);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round((r - l) * src.width)); c.height = Math.max(1, Math.round((btm - t) * src.height));
+  c.getContext("2d").drawImage(src, l * src.width, t * src.height, c.width, c.height, 0, 0, c.width, c.height);
+  return enlarge(c);
+}
+// Rotate a table crop by `deg` and cut it into overlapping horizontal strips, each widened for Jev.
+function rowStrips(src, b, deg, n) {
+  const w = Math.round((b.right - b.left) * src.width), h = Math.round((b.bottom - b.top) * src.height);
+  const t = document.createElement("canvas"); t.width = w; t.height = h;
+  const g = t.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, w, h);
+  g.translate(w / 2, h / 2); g.rotate(deg * Math.PI / 180);
+  g.drawImage(src, b.left * src.width, b.top * src.height, w, h, -w / 2, -h / 2, w, h);
+  const out = [], sh = h / n;
+  for (let i = 0; i < n; i++) {
+    const y0 = Math.max(0, i * sh - sh * 0.15), y1 = Math.min(h, (i + 1) * sh + sh * 0.15);
+    const s = Math.min(MAX_SIDE / w, 4), c = document.createElement("canvas");
+    c.width = Math.round(w * s); c.height = Math.max(MIN_SIDE, Math.round((y1 - y0) * s));
+    const cg = c.getContext("2d"); cg.fillStyle = "#fff"; cg.fillRect(0, 0, c.width, c.height);
+    cg.drawImage(t, 0, y0, w, y1 - y0, 0, (c.height - (y1 - y0) * s) / 2, c.width, (y1 - y0) * s);
+    out.push(c);
+  }
+  return out;
+}
+// Best mean strip confidence over the angles tried; stops as soon as the table reads cleanly.
+async function rowCoherence(src, box, call, tick) {
+  let best = 0;
+  for (const deg of ROW_ANGLES) {
+    const res = await pool(rowStrips(src, box, deg, ROW_STRIPS), async c => { const r = await call({ mode: "row", images: [b64(c)] }); tick(); return r.confidence; });
+    best = Math.max(best, res.reduce((a, b) => a + b, 0) / res.length);
+    if (best >= ROW_CLEAN) break;
+  }
+  return best;
+}
+// Close-up windows: an overlapping grid of squares 26% of the long side (~24 per image). Measured: ~300 px windows
+// on a 1536 px image can split an error between windows, ~400 px catch it; a coarse 3x3 grid made catches luck-dependent.
+function windows(src, deep) {
+  if (!deep) return [];
+  const L = Math.max(src.width, src.height), ww = Math.min(1, 0.26 * L / src.width), wh = Math.min(1, 0.26 * L / src.height), out = [];
+  for (let y = 0; ; y += wh * 0.6) {
+    for (let x = 0; ; x += ww * 0.6) {
+      const l = Math.min(x, 1 - ww), t = Math.min(y, 1 - wh);
+      out.push({ left: l, top: t, right: l + ww, bottom: t + wh });
+      if (x + ww >= 1) break;
+    }
+    if (y + wh >= 1) break;
+  }
+  return out;
+}
+// Upscale a crop so its long side is >= 1024 px (capped by Jev's 1568): small text measured far more readable this way.
+function enlarge(c) {
+  const s = Math.min(MAX_SIDE / Math.max(c.width, c.height), Math.max(1, CROP_MIN_LONG / Math.max(c.width, c.height)));
+  return fit(c, c.width * s, c.height * s);
+}
+const grow = (b, f) => { const w = (b.right - b.left) * f, h = (b.bottom - b.top) * f;
+  return { left: Math.max(0, b.left - w), top: Math.max(0, b.top - h), right: Math.min(1, b.right + w), bottom: Math.min(1, b.bottom + h) }; };
+const shrink = (b, f) => { const w = (b.right - b.left) * f, h = (b.bottom - b.top) * f;
+  return { left: b.left + w, top: b.top + h, right: b.right - w, bottom: b.bottom - h }; };
+const usable = b => b && b.right - b.left > 0.01 && b.bottom - b.top > 0.01;
+function overlaps(a, b) {
+  const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  if (w <= 0 || h <= 0) return false;
+  const i = w * h, A = (a.right - a.left) * (a.bottom - a.top), B = (b.right - b.left) * (b.bottom - b.top);
+  return i / (A + B - i) > 0.5 || i / Math.min(A, B) > 0.8;
+}
+// Overlapping grid cells (~px of source each, up to 3x3) for close-up coverage of the whole image.
+function sections(src, px = SECTION_PX, max = MAX_SECTIONS) {
+  const cols = Math.min(max, Math.ceil(src.width / px)), rows = Math.min(max, Math.ceil(src.height / px));
+  const w = Math.min(1, 1.15 / cols), h = Math.min(1, 1.15 / rows), out = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const x = cols > 1 ? c * (1 - w) / (cols - 1) : 0, y = rows > 1 ? r * (1 - h) / (rows - 1) : 0;
+    out.push({ left: x, top: y, right: x + w, bottom: y + h });
+  }
+  return out;
+}
+function cropExact(src, b) {
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round((b.right - b.left) * src.width)); c.height = Math.max(1, Math.round((b.bottom - b.top) * src.height));
+  c.getContext("2d").drawImage(src, b.left * src.width, b.top * src.height, c.width, c.height, 0, 0, c.width, c.height);
+  return enlarge(c);
+}
+
+// Frame count comes from the video's own duration: ~1/s, min 4, max 30, spread over the whole clip.
+async function loadVideo(f, onFrame) {
+  const v = document.createElement("video");
+  v.muted = true; v.playsInline = true; v.preload = "auto";
+  v.src = URL.createObjectURL(f);
+  try {
+    await new Promise((ok, bad) => { v.onloadeddata = ok; v.onerror = () => bad(new Error("This browser can't play that video. Try MP4 (H.264) or WebM.")); });
+    const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 1;
+    const count = Math.min(30, Math.max(4, Math.round(dur)));
+    const frames = [];
+    for (let i = 0; i < count; i++) {
+      const t = Math.min(dur - 0.001, (i + 0.5) * dur / count);
+      await new Promise(ok => { v.onseeked = ok; v.currentTime = t; });
+      frames.push({ t: Math.round(t * 100) / 100, canvas: fit(v, v.videoWidth, v.videoHeight), src: scaledCopy(v, v.videoWidth, v.videoHeight) });
+      onFrame(i + 1, count);
+    }
+    return frames;
+  } finally { URL.revokeObjectURL(v.src); }
+}
+
+// At most 6 requests in flight per page, across all files being scanned (Jev rate-limits bursts).
+let inflight = 0;
+const waiting = [];
+async function api(body) {
+  if (inflight >= 6) await new Promise(ok => waiting.push(ok));
+  inflight++;
+  try { return await apiOnce(body); }
+  finally { inflight--; waiting.shift()?.(); }
+}
+async function apiOnce(body) {
+  const r = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({ error: `Server error ${r.status}` }));
+  if (!r.ok) throw new Error(j.error || `Server error ${r.status}`);
+  return j;
+}
+
+async function pool(items, fn) {
+  const out = new Array(items.length); let next = 0;
+  await Promise.all(Array.from({ length: Math.min(WORKERS, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+  }));
+  return out;
+}
+
+function cloneCanvas(c) {
+  const o = document.createElement("canvas");
+  o.width = c.width; o.height = c.height;
+  o.getContext("2d").drawImage(c, 0, 0);
+  return o;
+}
+// Gray out an already-found spot (box fractions of this canvas) so the next question finds a different one.
+function mask(c, b) {
+  const g = c.getContext("2d");
+  g.fillStyle = "#808080";
+  g.fillRect(b.left * c.width, b.top * c.height, (b.right - b.left) * c.width, (b.bottom - b.top) * c.height);
+}
+
+// Several items can point at one spot (a hand inside a body): merge boxes that overlap heavily
+// (IoU > 0.4, or one mostly inside the other) into a single spot carrying all its types.
+function dedupe(boxes) {
+  const area = b => Math.max(1e-9, (b.right - b.left) * (b.bottom - b.top));
+  const inter = (a, b) => {
+    const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    return w > 0 && h > 0 ? w * h : 0;
+  };
+  const same = (a, b) => { const i = inter(a, b); return i / (area(a) + area(b) - i) > 0.4 || i / Math.min(area(a), area(b)) > 0.8; };
+  // Same problem type and touching = one error seen from two crops (user report: two boxes on one misspelling).
+  const sameError = (a, b) => a.keys.includes(b.key) && inter(grow(a, 0.05), b) > 0;
+  const spots = [];
+  for (const b of boxes.sort((x, y) => area(x) - area(y))) {   // smallest first, so the tighter box is kept
+    const s = spots.find(s => sameError(s, b) || same(s, b));
+    if (s) { if (!s.keys.includes(b.key)) s.keys.push(b.key); }
+    else spots.push({ ...b, keys: [b.key] });
+  }
+  return spots.sort((a, b) => a.top - b.top || a.left - b.left);
+}
+
+function drawBoxes(canvas, boxes) {
+  const c = cloneCanvas(canvas), g = c.getContext("2d");
+  const lw = Math.max(2, c.width / 400), r = Math.max(11, c.width / 70);
+  g.font = `700 ${r * 1.1}px -apple-system, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+  boxes.forEach((b, i) => {
+    const x = b.left * c.width, y = b.top * c.height;
+    g.strokeStyle = "#ff5a52"; g.lineWidth = lw;
+    g.strokeRect(x, y, (b.right - b.left) * c.width, (b.bottom - b.top) * c.height);
+    const cx = Math.max(r, x), cy = Math.max(r, y);
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fillStyle = "#ff5a52"; g.fill();
+    g.fillStyle = "#fff"; g.fillText(String(i + 1), cx, cy + 1);
+  });
+  return c.toDataURL("image/jpeg", 0.88);
+}
+
+// Layer 1 (neutral): find every distinct thing, section by section, graying out each find.
+// Layer 2: one call per thing on an enlarged crop: classify it and ask every category's checks at once;
+// only the checks of its category (plus object contact/form for physical things) count.
+async function analyzeFrame(fr, th, deep, tick, call) {
+  // Layer 1a: targeted box searches on the whole image (pages, objects, people), graying out each find.
+  // Boxes covering most of the image are useless crops, so they count as misses.
+  const finds = [], tables = [], pages = [];
+  await Promise.all(FIND_PLAN.map(async ([target, max]) => {
+    const canvas = cloneCanvas(fr.canvas);
+    let misses = 0, n = 0;
+    while (n < (deep ? max : 3) && misses < 2) {
+      const { box } = await call({ mode: "find", target, images: [b64(canvas)] }); tick();
+      if (!usable(box) || area(box) > 0.6) { misses++; continue; }
+      mask(canvas, box);
+      if (finds.some(f => overlaps(f, box))) { misses++; continue; }
+      finds.push(box); n++;
+      if (target === "table") tables.push(box);
+      if (target === "page") pages.push(box);
+    }
+  }));
+  // Layer 1b: overlapping grid cells guarantee every region gets a close-up check, even where boxes missed.
+  // Two close-up scales: 3x3 cells keep a chart next to the text that describes it (contradictions);
+  // finer windows make small text readable (misspellings). Measured: each scale alone misses one of these.
+  const coarse = deep ? sections(fr.src, Math.max(fr.src.width, fr.src.height) / 3) : [];
+  const regions = [...finds.map(box => ({ box, kind: "find" })), ...[...coarse, ...windows(fr.src, deep)].map(box => ({ box, kind: "cell" }))];
+  // Whole-image table search is unreliable with many papers, so also look for one table inside each found page.
+  if (deep) await pool(pages, async p => {
+    const { box } = await call({ mode: "find", target: "table", images: [b64(cropCanvas(fr.src, p))] }); tick();
+    if (!usable(box)) return;
+    const c = padded(p), g = { left: c.left + box.left * (c.right - c.left), right: c.left + box.right * (c.right - c.left),
+      top: c.top + box.top * (c.bottom - c.top), bottom: c.top + box.bottom * (c.bottom - c.top) };
+    if (!tables.some(t => overlaps(t, g))) tables.push(g);
+  });
+  const subcells = windows(fr.src, deep);
+  const layerCheck = pool(subcells, async box => {
+    const img = b64(cropExact(fr.src, box));
+    const { layer } = await call({ mode: "layer", images: [img] }); tick();
+    if (layer < 0.3 + 0.4 * (th - NEAR)) return { box, layer };
+    const more = await Promise.all(Array.from({ length: REPEATS }, () => call({ mode: "layer", images: [img] }).then(r => { tick(); return r.layer; })));
+    return { box, layer: [layer, ...more].reduce((a, b) => a + b, 0) / (more.length + 1) };
+  });
+  // Tiny boxes are slivers of a table (measured: 80 px slivers read as "incoherent" and caused false flags).
+  const tableCheck = deep ? pool(tables.filter(b => b.right - b.left >= 0.12 && b.bottom - b.top >= 0.08), async box => {
+    const { table } = await call({ mode: "istable", images: [b64(cropCanvas(fr.src, box))] }); tick();
+    return table >= 0.8 ? { box, table, coherence: await rowCoherence(fr.src, box, call, tick) } : null;
+  }).then(r => r.filter(Boolean)) : Promise.resolve([]);
+  const [items, sceneRes, tableRes, layerRes] = await Promise.all([
+    pool(regions, async ({ box, kind }) => {
+      const img = kind === "cell" ? cropExact(fr.src, box) : cropCanvas(fr.src, box);
+      const r = await call({ mode: "item", images: [b64(img)] }); tick();
+      // Close-up windows only judge text; objects and people are judged on their own boxes (cells cut them badly).
+      if (kind === "cell" && r.text < 0.3) return { box, kind, img, list: null };
+      return { box, kind, img, list: r.list };
+    }),
+    call({ mode: "scene", images: [fr.b64] }).then(x => { tick(); return x; }),
+    tableCheck,
+    layerCheck,
+  ]);
+
+  // An item is flagged when its hallucination answers together reach the threshold; it's labeled with the top one.
+  const verdict = (list, prefix) => {
+    if (!list) return null;
+    const [top, p] = Object.entries(list.problems).sort((a, b) => b[1] - a[1])[0] || [];
+    const total = Object.values(list.problems).reduce((a, b) => a + b, 0);
+    return { key: top && `${prefix}.${top}`, total, p };
+  };
+  const scores = { overall: sceneRes.overall }, found = {}, flaggedSet = new Set(), spotBoxes = [];
+  for (const it of items) {
+    if (it.kind === "find") found.items = (found.items || 0) + 1;
+    if (!it.list) continue;
+    for (const [k, p] of Object.entries(it.list.problems)) scores[`x.${k}`] = Math.max(scores[`x.${k}`] ?? 0, p);
+    it.verdict = verdict(it.list, "x");
+  }
+  // Jev is not deterministic (identical crop x5: layer 0.57-0.67, contradiction 0.39-0.49), so anything near the
+  // bar is asked REPEATS more times on the same crop and averaged.
+  await pool(items.filter(it => it.verdict && it.verdict.total >= th - NEAR), async it => {
+    const runs = await Promise.all(Array.from({ length: REPEATS }, () => call({ mode: "item", images: [b64(it.img)] }).then(r => { tick(); return r; })));
+    const totals = [it.verdict.total, ...runs.map(r => verdict(r.list, "x").total)];
+    it.verdict.first = it.verdict.total;
+    it.verdict.total = totals.reduce((a, b) => a + b, 0) / totals.length;
+    // second format: a specific yes/no that names the normal look-alikes; flag only if the two agree on average
+    if (it.verdict.total >= th) {
+      const { confirm } = await call({ mode: "confirm", problem: it.verdict.key, images: [b64(it.img)] }); tick();
+      it.verdict.confirm = confirm;
+      it.verdict.total = (it.verdict.total + confirm) / 2;
+    }
+  });
+  for (const it of items) {
+    const v = it.verdict;
+    if (v && v.total >= th) { flaggedSet.add(v.key); scores[v.key] = Math.max(scores[v.key] ?? 0, v.total); it.flag = v.key; }
+  }
+  // Layer 2b: a flagged grid cell gets the exact spot boxed inside it; a flagged find is already a tight box.
+  await pool(items.filter(it => it.flag), async it => {
+    let b = it.box;
+    if (it.kind === "cell") {
+      const { box } = await call({ mode: "pinpoint", problem: it.flag, images: [b64(it.img)] }); tick();
+      if (usable(box)) b = { left: it.box.left + box.left * (it.box.right - it.box.left), right: it.box.left + box.right * (it.box.right - it.box.left),
+        top: it.box.top + box.top * (it.box.bottom - it.box.top), bottom: it.box.top + box.bottom * (it.box.bottom - it.box.top) };
+    }
+    spotBoxes.push({ key: it.flag, ...b });
+  });
+  for (const [k, p] of Object.entries(sceneRes.list.problems)) scores[`x.${k}`] = Math.max(scores[`x.${k}`] ?? 0, p);
+  const sv = verdict(sceneRes.list, "x");
+  if (sv.total >= th) { flaggedSet.add(sv.key); scores[sv.key] = Math.max(scores[sv.key], sv.total); }
+  for (const t of tableRes) {
+    const p = Math.min(1, Math.max(0, (0.88 - t.coherence) / 0.15));
+    scores["x.alignment"] = Math.max(scores["x.alignment"] ?? 0, p);
+    if (p >= th) { flaggedSet.add("x.alignment"); spotBoxes.push({ key: "x.alignment", ...t.box }); }
+  }
+  for (const l of layerRes) {
+    const p = Math.min(1, Math.max(0, (l.layer - 0.3) / 0.4));
+    scores["x.layering"] = Math.max(scores["x.layering"] ?? 0, p);
+    if (p >= th) { flaggedSet.add("x.layering"); l.flag = true; }
+  }
+  // A flagged layering window is large; box the stray word inside it (measured: lands on the word, conf ~0.6).
+  await pool(layerRes.filter(l => l.flag), async l => {
+    const { box, confidence } = await call({ mode: "pinpoint", problem: "x.layering", images: [b64(cropExact(fr.src, l.box))] }); tick();
+    const w = l.box.right - l.box.left, hh = l.box.bottom - l.box.top;
+    spotBoxes.push({ key: "x.layering", ...(usable(box) && confidence >= 0.3
+      ? { left: l.box.left + box.left * w, right: l.box.left + box.right * w, top: l.box.top + box.top * hh, bottom: l.box.top + box.bottom * hh } : l.box) });
+  });
+  const flagged = [...flaggedSet], boxes = dedupe(spotBoxes);
+  return { t: fr.t, scores, flagged, boxes, found, tables: tableRes, layers: layerRes, items: items.map(({ img, ...it }) => it), scene: sceneRes.list, image: drawBoxes(fr.canvas, boxes) };
+}
+
+async function start(f) {
+  await META;
+  // Defect probability needed to flag: 0% sensitivity -> 99%, 50% -> 80%, 100% -> 60%.
+  // On real photos (including busy scenes) no check passed 80%; below 60% is noise.
+  const th = Math.min(0.99, 1 - 0.4 * $("#th").value);
+  const card = document.createElement("article");
+  card.className = "card glass";
+  card.innerHTML = `<div class="head"><div class="name"></div><div class="score"><b>–</b><small>AI likelihood</small></div></div>
+    <div class="bar"><div></div></div><div class="status">Reading file…</div>`;
+  card.querySelector(".name").textContent = f.name;
+  $("#results").prepend(card);
+  const bar = card.querySelector(".bar > div"), status = card.querySelector(".status");
+  try {
+    const isVideo = f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i.test(f.name);
+    const frames = isVideo
+      ? await loadVideo(f, (i, n) => { status.textContent = `Extracting frames… ${i}/${n}`; bar.style.width = (i / n * 15) + "%"; })
+      : [await loadImage(f).then(({ full, src }) => ({ t: null, canvas: full, src }))];
+    frames.forEach(fr => fr.b64 = b64(fr.canvas));
+    // Cost meter: every response carries Jev's input-token usage; output tokens are free.
+    const meter = { calls: 0, tokens: 0 };
+    const call = async body => { const j = await api(body); meter.calls++; meter.tokens += j.usage?.input_tokens || 0; return j; };
+    const tick = () => { bar.style.width = Math.min(97, 15 + meter.calls * (isVideo ? 1 : 2)) + "%"; status.textContent = `Analyzing… ${costText(meter)}`; };
+    const per = await pool(frames, fr => analyzeFrame(fr, th, !isVideo, tick, call));
+    const pairs = isVideo ? await pool(frames.slice(1), async (fr, i) => {
+      const { list } = await call({ mode: "pair", images: [frames[i].b64, fr.b64] }); tick();
+      return { from_t: frames[i].t, ...list.problems };
+    }) : [];
+    const report = { file: f.name, video: isVideo, frames: per, temporal: pairs, ai: Math.max(...per.map(p => p.scores.overall)), meter };
+    (window.__hc = window.__hc || []).push({ file: f.name, th, ...report, frames: per.map(({ image, ...p }) => p) });
+    render(card, report, th);
+  } catch (e) {
+    status.className = "err";
+    status.textContent = e.message;
+    bar.style.background = "var(--red)";
+    (window.__hc = window.__hc || []).push({ file: f.name, error: e.message });
+  }
+}
+
+const X_PATH = "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z";
+
+// Shareable PNG: boxed image on top, verdict + numbered spots + credit underneath.
+async function shareImage(r, f) {
+  const src = new Image();
+  src.src = f.image;
+  await src.decode();
+  const W = 1200, pad = 48, scale = W / src.width, ih = Math.round(src.height * scale);
+  const spots = f.boxes.map((b, i) => `${i + 1}. ${b.keys.map(k => LABELS[k] || k).join(" · ")}`);
+  const shown = spots.slice(0, 8), more = spots.length - shown.length;
+  const lines = shown.length + (more ? 1 : 0);
+  const panel = 150 + lines * 40 + 70;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = ih + panel;
+  const g = c.getContext("2d");
+  g.fillStyle = "#111216"; g.fillRect(0, 0, W, c.height);
+  g.drawImage(src, 0, 0, W, ih);
+  const font = (w, s) => `${w} ${s}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+  let y = ih + pad;
+  g.textBaseline = "top";
+  g.fillStyle = r.ai >= .7 ? "#ff5a52" : r.ai >= .4 ? "#ffb547" : "#4fe0a0";
+  g.font = font(750, 64); g.fillText(Math.round(r.ai * 100) + "%", pad, y);
+  const pw = g.measureText(Math.round(r.ai * 100) + "%").width;
+  g.fillStyle = "rgba(245,247,255,.62)"; g.font = font(600, 20);
+  g.fillText("AI LIKELIHOOD", pad + pw + 20, y + 12);
+  g.fillStyle = "#f5f7ff"; g.font = font(600, 26);
+  g.fillText(spots.length ? `${spots.length} hallucination${spots.length > 1 ? "s" : ""} found${r.video ? ` at ${f.t}s` : ""}` : "No hallucinations found", pad + pw + 20, y + 38);
+  y += 110;
+  g.font = font(500, 26); g.fillStyle = "#f5f7ff";
+  shown.forEach(s => { g.fillText(s, pad, y); y += 40; });
+  if (more) { g.fillStyle = "rgba(245,247,255,.62)"; g.fillText(`+${more} more`, pad, y); y += 40; }
+  g.fillStyle = "rgba(255,255,255,.12)"; g.fillRect(pad, c.height - 70, W - pad * 2, 1);
+  g.font = font(500, 20); g.fillStyle = "rgba(245,247,255,.62)";
+  g.fillText(location.host, pad, c.height - 48);
+  const credit = "made by @0xRinne";
+  g.fillText(credit, W - pad - g.measureText(credit).width, c.height - 48);
+  return new Promise(ok => c.toBlob(ok, "image/png"));
+}
+
+function render(card, r, th) {
+  const s = card.querySelector(".score b");
+  s.textContent = Math.round(r.ai * 100) + "%";
+  s.style.color = color(r.ai);
+  card.querySelector(".bar").remove();
+  const status = card.querySelector(".status");
+  const flaggedFrames = r.frames.filter(f => f.flagged.length).length;
+  status.textContent = r.video
+    ? `${r.frames.length} frames scanned · ${flaggedFrames} with hallucinations`
+    : (r.frames[0].flagged.length ? `${r.frames[0].flagged.length} problem type${r.frames[0].flagged.length > 1 ? "s" : ""} · ${r.frames[0].boxes.length} spot${r.frames[0].boxes.length === 1 ? "" : "s"} boxed` : "No hallucinations found");
+  if (r.meter) {
+    const c = document.createElement("div");
+    c.className = "cost"; c.textContent = `Cost of this check: ${costText(r.meter)}`;
+    status.after(c);
+  }
+  const boxErr = r.frames.find(f => f.boxError);
+  if (boxErr) status.textContent += ` · boxes unavailable (${boxErr.boxError})`;
+
+  const body = document.createElement("div");
+  body.className = "body";
+  body.innerHTML = `<div><div class="view"><img alt=""></div>
+    <div class="actions"><button class="dl">Download</button><button class="cp">Copy image</button>
+    <a class="x" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path fill="currentColor" d="${X_PATH}"/></svg>Post</a></div>
+    <div class="spotwrap"></div></div>
+    <div class="chips"></div>`;
+  card.append(body);
+  const img = body.querySelector("img"), chips = body.querySelector(".chips"), spotWrap = body.querySelector(".spotwrap");
+  let cur = 0;
+  const shareBlob = () => shareImage(r, r.frames[cur]);
+  body.querySelector(".dl").onclick = async () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await shareBlob());
+    a.download = r.file.replace(/\.[^.]+$/, "") + "-hallucinations.png";
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  body.querySelector(".cp").onclick = async e => {
+    const b = e.currentTarget;
+    try { await navigator.clipboard.write([new ClipboardItem({ "image/png": shareBlob() })]); b.textContent = "Copied"; }
+    catch { b.textContent = "Copy not supported — use Download"; }
+    setTimeout(() => b.textContent = "Copy image", 2000);
+  };
+
+  function show(i) {
+    const f = r.frames[i];
+    cur = i;
+    const n = f.boxes.length;
+    const text = n ? `Jev found ${n} hallucination${n > 1 ? "s" : ""} in this ${r.video ? "video" : "image"} (${Math.round(r.ai * 100)}% AI likelihood). Check yours:`
+                   : `Checked this ${r.video ? "video" : "image"} for AI hallucinations. Try it:`;
+    body.querySelector(".x").href = "https://x.com/intent/post?" + new URLSearchParams({ text, url: location.origin, via: "0xRinne" });
+    img.src = f.image;
+    img.alt = r.file + (r.video ? ` at ${f.t}s` : "");
+    chips.innerHTML = r.video ? `<div class="label">Frame at ${f.t}s</div>` : "";
+    if (f.found?.items) { const s = document.createElement("div"); s.className = "seen"; s.textContent = `Checked ${f.found.items} items plus close-ups of the whole image`; chips.append(s); }
+    for (const [g, title] of Object.entries(GROUPS)) {
+      const rows = Object.entries(f.scores).filter(([k]) => CHECK_GROUP[k] === g).sort((a, b) => b[1] - a[1]);
+      if (!rows.length) continue;
+      const shown = rows.filter(([, v]) => v >= 0.2), clear = rows.length - shown.length;
+      const h = document.createElement("div");
+      h.className = "label"; h.textContent = title;
+      chips.append(h);
+      shown.forEach(([k, v]) => {
+        const c = document.createElement("span");
+        c.className = "chip" + (f.flagged.includes(k) ? " hit" : "");
+        c.innerHTML = `${LABELS[k] || k}<em>${Math.round(v * 100)}%</em>`;
+        chips.append(c);
+      });
+      if (clear) {
+        const hidden = rows.filter(([, v]) => v < 0.2).map(([k, v]) => {
+          const c = document.createElement("span");
+          c.className = "chip low"; c.hidden = true;
+          c.innerHTML = `${LABELS[k] || k}<em>${Math.round(v * 100)}%</em>`;
+          return c;
+        });
+        const more = document.createElement("button");
+        const label = () => more.textContent = hidden[0].hidden ? (shown.length ? `Show ${clear} more` : `All ${clear} clear · show`) : "Show less";
+        more.className = "chip quiet more"; label();
+        more.onclick = () => { hidden.forEach(c => c.hidden = !c.hidden); label(); };
+        chips.append(...hidden, more);
+      }
+    }
+    spotWrap.innerHTML = "";
+    if (f.boxes.length) {
+      const sl = document.createElement("div");
+      sl.className = "label"; sl.textContent = "Spots found";
+      const ol = document.createElement("ol");
+      ol.className = "spots" + (f.boxes.length > 4 ? " two" : "");
+      f.boxes.forEach(b => { const li = document.createElement("li"); li.textContent = b.keys.map(k => LABELS[k] || k).join(" · "); ol.append(li); });
+      spotWrap.append(sl, ol);
+    }
+    if (r.video) {
+      const tl = document.createElement("div");
+      tl.className = "label"; tl.textContent = "Between frames";
+      chips.append(tl);
+      const hits = r.temporal.flatMap(t => ["morph", "pop"].filter(k => t[k] >= th).map(k => `${LABELS[k]} at ${t.from_t}s`));
+      (hits.length ? hits : ["Nothing changed impossibly"]).forEach(h => {
+        const c = document.createElement("span");
+        c.className = "chip" + (hits.length ? " hit" : "");
+        c.textContent = h;
+        chips.append(c);
+      });
+    }
+    card.querySelectorAll(".strip button").forEach((b, j) => b.classList.toggle("on", j === i));
+  }
+
+  if (r.video) {
+    const strip = document.createElement("div");
+    strip.className = "strip";
+    r.frames.forEach((f, i) => {
+      const b = document.createElement("button");
+      b.innerHTML = `<img alt="frame at ${f.t}s"><span class="t">${f.t}s</span>${f.flagged.length ? '<span class="dot"></span>' : ""}`;
+      b.querySelector("img").src = f.image;
+      b.onclick = () => show(i);
+      strip.append(b);
+    });
+    card.append(strip);
+  }
+  show(r.frames.reduce((best, f, i) => f.scores.overall > r.frames[best].scores.overall ? i : best, 0));
+}
+</script>
+</body>
+</html>
