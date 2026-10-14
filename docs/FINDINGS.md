@@ -124,7 +124,37 @@ the threshold, and it is labeled with the top option.
   plus a "pinpoint" box inside a flagged cell.
 - First v4 run on the office image: 8 papers found; the Orion page scored
   "absurd statement" 0.72 (threshold 0.8).
-- Full v4 evaluation: pending.
+- Full v4 evaluation: see below.
+
+## v4 evaluation
+
+Measured with the v4 prompts on 2026-10-14. Defect = sum of the hallucination
+options in the per-category list Choice; an item is flagged when it reaches the
+threshold. Raw data: [`data/scores/v4_all.json`](data/scores/v4_all.json).
+
+| Set | @0.6 | @0.7 | @0.8 (default) | @0.9 |
+|---|---:|---:|---:|---:|
+| User's AI office image | 1/1 | 1/1 | 1/1 | 1/1 |
+| Planted-error documents | 2/2 | 2/2 | 2/2 | 2/2 |
+| Real photos incl. busy scenes (26), flagged | 8/26 | 4/26 | 1/26 | 1/26 |
+
+- **Office image in the live UI:** 2 spots boxed exactly: the "Marketing Campai"
+  truncated title (misspelled/invented words 0.92) and the purple-octopus
+  sentence (absurd or impossible statement 0.81), both found via grid cell plus
+  pinpoint box. The glasses merge is still not flagged.
+- **The one real false positive at 0.8:** a street sign judged "misspelled
+  words" 0.91 (likely a real non-English word).
+- **Real false positives at 0.7** included Daft Punk helmets read as "glasses
+  merge" 0.77 and a chest tattoo as "half-formed object" 0.70.
+- **Cost:** Jev 1.14 is priced at $0.042 per million input tokens, output free
+  (docs.typesafe.ai/models, 2026-10-14). The office image scan took 28 calls and
+  134k input tokens, $0.0056. One box/find call on a ~1.5k px image is about
+  4-5k input tokens; a tiny image about 676 tokens. About 12 verified items per
+  image on average.
+- **Discovery that worked best:** targeted whole-image box searches ("one single
+  sheet of paper (just one, not a group)", objects, people; boxes covering more
+  than 60% of the image discarded), plus overlapping 3x3 grid cells for
+  coverage, plus a pinpoint box inside a flagged cell.
 
 ## Product and engineering notes
 

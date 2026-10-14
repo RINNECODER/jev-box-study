@@ -10,6 +10,7 @@
 // guide, GeneVA) and practitioner checklists; "everything is correct" names the real-photo look-alikes.
 const API = "https://api.typesafe.ai/v1/systemone";
 const MODEL = "jev-1.14.0";
+const PRICE_PER_MTOK = 0.042;  // USD per million input tokens (docs.typesafe.ai/models, 2026-10-14); output is free
 const MAX_B64 = 3_000_000;
 const MASKED = "Solid gray rectangles cover areas already found; ignore them.";
 
@@ -166,14 +167,16 @@ async function jev(images, questions) {
     body: JSON.stringify({ model: MODEL, state, assets, questions }),
   });
   if (!r.ok) throw new Error(`Jev ${r.status}: ${(await r.text()).slice(0, 300)}`);
-  return (await r.json()).answers;
+  const j = await r.json();
+  Object.defineProperty(j.answers, "usage", { value: j.usage });  // token usage, for the UI's cost meter
+  return j.answers;
 }
 
 const isJpeg = s => typeof s === "string" && s.length <= MAX_B64 && s.startsWith("/9j/") && /^[A-Za-z0-9+/]+=*$/.test(s);
 const round = x => Math.round(x * 1000) / 1000;
 
 export default async function handler(req, res) {
-  if (req.method === "GET") return res.json({ checks: META_CHECKS,
+  if (req.method === "GET") return res.json({ checks: META_CHECKS, price_per_mtok: PRICE_PER_MTOK,
     cats: Object.fromEntries(Object.entries(CATS).map(([k, c]) => [k, { label: c.label }])),
     temporal: Object.fromEntries(Object.entries(TEMPORAL).map(([k, v]) => [k, v[0]])),
     groups: { people: "People", objects: "Objects", text: "Text & documents", scene: "Scene" } });
@@ -189,31 +192,35 @@ export default async function handler(req, res) {
   const msg = await limited(ip);
   if (msg) return res.status(429).json({ error: msg });
 
+  let usage = { input_tokens: 0 };
+  const jevU = async (...a) => { const x = await jev(...a); usage = { input_tokens: usage.input_tokens + (x.usage?.input_tokens || 0) }; return x; };
+  const json = res.json.bind(res);
+  res.json = o => json({ ...o, usage });
   try {
     if (mode === "find") {
       const target = FIND[req.body.target] || FIND.any;
-      const ans = await jev({ img: images[0] }, { b: { type: "box", instructions: `${target} in \`img\` that is not covered by a gray rectangle. ${MASKED}` } });
+      const ans = await jevU({ img: images[0] }, { b: { type: "box", instructions: `${target} in \`img\` that is not covered by a gray rectangle. ${MASKED}` } });
       return res.json({ box: ans.b.box, confidence: ans.b.confidence });
     }
     if (mode === "pinpoint") {
       // only used after a region was already judged to contain this problem
-      const ans = await jev({ img: images[0] }, { b: { type: "box", instructions: `the exact spot in \`img\` where ${PROBLEMS[req.body.problem]}` } });
+      const ans = await jevU({ img: images[0] }, { b: { type: "box", instructions: `the exact spot in \`img\` where ${PROBLEMS[req.body.problem]}` } });
       return res.json({ box: ans.b.box, confidence: ans.b.confidence });
     }
     if (mode === "item") {
       // classify + every category's list in one call (speculative fan-out); the UI uses the list of the winning category
       const lists = Object.fromEntries(Object.entries(CATS).filter(([, c]) => Object.keys(c.problems).length)
         .map(([k, c]) => [k, listQ(`If \`img\` shows ${c.desc}, look at it closely. Which best describes it?`, c.problems)]));
-      const ans = await jev({ img: images[0] }, { category: CLASSIFY, ...lists });
+      const ans = await jevU({ img: images[0] }, { category: CLASSIFY, ...lists });
       const byLabel = Object.fromEntries(Object.entries(CATS).map(([k, c]) => [c.label, k]));
       return res.json({ category: Object.fromEntries(Object.entries(ans.category.probabilities).map(([l, p]) => [byLabel[l], round(p)])),
         lists: Object.fromEntries(Object.keys(lists).map(k => [k, split(CATS[k].problems, ans[k])])) });
     }
     if (mode === "scene") {
-      const ans = await jev({ img: images[0] }, { overall: OVERALL, scene: listQ("Look at the whole of `img`. Which best describes it?", SCENE) });
+      const ans = await jevU({ img: images[0] }, { overall: OVERALL, scene: listQ("Look at the whole of `img`. Which best describes it?", SCENE) });
       return res.json({ overall: round(ans.overall.noul), list: split(SCENE, ans.scene) });
     }
-    const ans = await jev({ a: images[0], b: images[1] }, { pair: listQ("Compare frame `a` with the next frame `b` of a video. Which best describes the change?", TEMPORAL) });
+    const ans = await jevU({ a: images[0], b: images[1] }, { pair: listQ("Compare frame `a` with the next frame `b` of a video. Which best describes the change?", TEMPORAL) });
     return res.json({ list: split(TEMPORAL, ans.pair) });
   } catch (e) {
     console.error(e);
