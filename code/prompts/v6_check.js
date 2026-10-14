@@ -6,7 +6,7 @@
 //   row:   what is physically on one thin strip of a table (for misaligned-table detection)
 //   layer: is text from a lower sheet printed over the top sheet (two wordings averaged)
 //   confirm: specific yes/no for a flagged hallucination type, naming normal look-alikes
-//   scene: whole-image list question + AI likelihood
+//   scene: whole-image list question (no AI-likelihood score: it wasn't accurate)
 //   pair:  two consecutive video frames
 const API = "https://api.typesafe.ai/v1/systemone";
 const MODEL = "jev-1.14.0";
@@ -90,8 +90,6 @@ const TEMPORAL = {
   morph: ["Morphing", "an object, face or text turns into something else or changes count between the frames"],
   pop: ["Popping", "something vanishes or appears out of nowhere between the frames"],
 };
-const OVERALL = { type: "noul", instructions: "`img` is AI-generated or AI-edited rather than an untouched photo, scan, screenshot or video frame.",
-  criteria: { true: "made or altered by AI", false: "an untouched real capture" } };
 
 const listQ = (instructions, problems) => ({ type: "choice", instructions,
   criteria: { [CORRECT]: NORMAL, ...Object.fromEntries(Object.values(problems).map(([l, d]) => [l, d])),
@@ -229,8 +227,8 @@ export default async function handler(req, res) {
       return res.json({ list: split(FLAT, ans.list), text: round(ans.text.noul) });
     }
     if (mode === "scene") {
-      const ans = await jevU({ img: images[0] }, { overall: OVERALL, scene: listQ("Look at the whole of `img`. Which best describes it?", FLAT) });
-      return res.json({ overall: round(ans.overall.noul), list: split(FLAT, ans.scene) });
+      const ans = await jevU({ img: images[0] }, { scene: listQ("Look at the whole of `img`. Which best describes it?", FLAT) });
+      return res.json({ list: split(FLAT, ans.scene) });
     }
     const ans = await jevU({ a: images[0], b: images[1] }, { pair: listQ("Compare frame `a` with the next frame `b` of a video. Which best describes the change?", TEMPORAL) });
     return res.json({ list: split(TEMPORAL, ans.pair) });

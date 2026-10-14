@@ -36,6 +36,8 @@ image "Overlapping Office Reports on a Desk":
 6. The word "Total" from the Orion table printed on top of the IT Security
    Brief sheet covering it.
 
+The app reports hallucinations only. An earlier whole-image "AI likelihood" score (one yes/no noul) was removed: it wasn't accurate enough to show.
+
 **Final v6 result (production):** 4 of 6 caught in 3 of 3 runs: #1, #2, #3 and
 #6 (the layering word boxed exactly). #4 and #5 (table misalignment) were not
 caught. Real photos (26 Wikimedia Commons, including busy scenes): 0 of 26

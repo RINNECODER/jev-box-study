@@ -468,7 +468,7 @@ async function analyzeFrame(fr, th, deep, tick, call) {
     const total = Object.values(list.problems).reduce((a, b) => a + b, 0);
     return { key: top && `${prefix}.${top}`, total, p };
   };
-  const scores = { overall: sceneRes.overall }, found = {}, flaggedSet = new Set(), spotBoxes = [];
+  const scores = {}, found = {}, flaggedSet = new Set(), spotBoxes = [];
   for (const it of items) {
     if (it.kind === "find") found.items = (found.items || 0) + 1;
     if (!it.list) continue;
@@ -534,7 +534,7 @@ async function start(f) {
   const th = Math.min(0.99, 1 - 0.4 * $("#th").value);
   const card = document.createElement("article");
   card.className = "card glass";
-  card.innerHTML = `<div class="head"><div class="name"></div><div class="score"><b>–</b><small>AI likelihood</small></div></div>
+  card.innerHTML = `<div class="head"><div class="name"></div><div class="score"><b>–</b><small>Hallucinations</small></div></div>
     <div class="bar"><div></div></div><div class="status">Reading file…</div>`;
   card.querySelector(".name").textContent = f.name;
   $("#results").prepend(card);
@@ -554,7 +554,7 @@ async function start(f) {
       const { list } = await call({ mode: "pair", images: [frames[i].b64, fr.b64] }); tick();
       return { from_t: frames[i].t, ...list.problems };
     }) : [];
-    const report = { file: f.name, video: isVideo, frames: per, temporal: pairs, ai: Math.max(...per.map(p => p.scores.overall)), meter };
+    const report = { file: f.name, video: isVideo, frames: per, temporal: pairs, meter };
     (window.__hc = window.__hc || []).push({ file: f.name, th, ...report, frames: per.map(({ image, ...p }) => p) });
     render(card, report, th);
   } catch (e) {
@@ -585,11 +585,11 @@ async function shareImage(r, f) {
   const font = (w, s) => `${w} ${s}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
   let y = ih + pad;
   g.textBaseline = "top";
-  g.fillStyle = r.ai >= .7 ? "#ff5a52" : r.ai >= .4 ? "#ffb547" : "#4fe0a0";
-  g.font = font(750, 64); g.fillText(Math.round(r.ai * 100) + "%", pad, y);
-  const pw = g.measureText(Math.round(r.ai * 100) + "%").width;
+  g.fillStyle = spots.length ? "#ff5a52" : "#4fe0a0";
+  g.font = font(750, 64); g.fillText(String(spots.length), pad, y);
+  const pw = g.measureText(String(spots.length)).width;
   g.fillStyle = "rgba(245,247,255,.62)"; g.font = font(600, 20);
-  g.fillText("AI LIKELIHOOD", pad + pw + 20, y + 12);
+  g.fillText("HALLUCINATIONS", pad + pw + 20, y + 12);
   g.fillStyle = "#f5f7ff"; g.font = font(600, 26);
   g.fillText(spots.length ? `${spots.length} hallucination${spots.length > 1 ? "s" : ""} found${r.video ? ` at ${f.t}s` : ""}` : "No hallucinations found", pad + pw + 20, y + 38);
   y += 110;
@@ -606,8 +606,9 @@ async function shareImage(r, f) {
 
 function render(card, r, th) {
   const s = card.querySelector(".score b");
-  s.textContent = Math.round(r.ai * 100) + "%";
-  s.style.color = color(r.ai);
+  const total = Math.max(...r.frames.map(f => f.boxes.length + f.flagged.filter(k => !f.boxes.some(b => b.keys.includes(k))).length));
+  s.textContent = String(total);
+  s.style.color = total ? "var(--red)" : "var(--green)";
   card.querySelector(".bar").remove();
   const status = card.querySelector(".status");
   const flaggedFrames = r.frames.filter(f => f.flagged.length).length;
@@ -650,7 +651,7 @@ function render(card, r, th) {
     const f = r.frames[i];
     cur = i;
     const n = f.boxes.length;
-    const text = n ? `Jev found ${n} hallucination${n > 1 ? "s" : ""} in this ${r.video ? "video" : "image"} (${Math.round(r.ai * 100)}% AI likelihood). Check yours:`
+    const text = n ? `Jev found ${n} hallucination${n > 1 ? "s" : ""} in this ${r.video ? "video" : "image"}. Check yours:`
                    : `Checked this ${r.video ? "video" : "image"} for AI hallucinations. Try it:`;
     body.querySelector(".x").href = "https://x.com/intent/post?" + new URLSearchParams({ text, url: location.origin, via: "0xRinne" });
     img.src = f.image;
@@ -720,7 +721,7 @@ function render(card, r, th) {
     });
     card.append(strip);
   }
-  show(r.frames.reduce((best, f, i) => f.scores.overall > r.frames[best].scores.overall ? i : best, 0));
+  show(r.frames.reduce((best, f, i) => f.boxes.length > r.frames[best].boxes.length ? i : best, 0));
 }
 </script>
 </body>
