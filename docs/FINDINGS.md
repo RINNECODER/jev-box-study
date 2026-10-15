@@ -204,6 +204,31 @@ Raw data: [`data/scores/v4b_all.json`](data/scores/v4b_all.json),
 6. **Background corrupted characters:** weak signal only (0.44-0.56 versus
    0.07-0.23 on clean text).
 
+## v7: judge only whole things (separate looking from judging)
+
+A public user ran a meme ("Hours of research / Fonts are all mixed up") and v6 flagged "research" as a misspelled
+or invented word (92%). The box started after the "r": a fixed close-up window had cut the word to "esearch", and
+every later step (repeats, the confirm question, pinpoint) reused that same cut crop, so the safety checks could
+not help. Root cause: verdicts were made on crops cut by geometry, not content; a window can slice a word, hand or
+face just as easily.
+
+Fix (structural, not a word-edge patch):
+- Grid windows only raise *leads*; they never produce a verdict.
+- Every verdict is made on a content-aligned crop: Jev's own boxes (finds), or a unit Jev frames around the lead's
+  spot ("the single complete thing at the center: the whole sign, label, heading, line or paragraph, or the whole
+  object, hand, face or person"); if the framed unit touches the context crop's edge, the context is widened and
+  framed again.
+- The unit depends on the problem: a misspelling needs its word or line; a text-vs-chart contradiction or a sum
+  needs the whole sheet (framing only the sentence dropped the chart and the contradiction was missed).
+- A window raises a lead for each strong problem it sees (top 2 at >= 0.25): one window held both the misspelled
+  title and the contradiction, and top-1 leads lost the contradiction.
+- Pinpoint is display-only, run after the verdict on the whole unit.
+
+Single targeted run on the office image (not the full 3-run evaluation): #1, #2, #3, #6 caught, each boxed on the
+exact spot (title, octopus sentence, Key Takeaways line, "Total"); $0.022, 185 calls. In another run the Facilities
+table (#5) was boxed correctly too. A synthetic clean meme with words placed under window edges produced no flags,
+but no window raised a lead there either, so it does not prove the cut-word path; the real meme is the test to rerun.
+
 ## v6: the version that works
 
 Ground truth: the author (a human) found 6 hallucinations in the AI office

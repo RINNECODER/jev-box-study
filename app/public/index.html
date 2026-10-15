@@ -498,15 +498,53 @@ async function analyzeFrame(fr, th, deep, tick, call) {
     return { key: top && `${prefix}.${top}`, total, p };
   };
   const scores = {}, found = {}, flaggedSet = new Set(), spotBoxes = [];
-  for (const it of items) {
-    if (it.kind === "find") found.items = (found.items || 0) + 1;
-    if (!it.list) continue;
+  const mapIn = (outer, b) => { const w = outer.right - outer.left, hh = outer.bottom - outer.top;
+    return { left: outer.left + b.left * w, right: outer.left + b.right * w, top: outer.top + b.top * hh, bottom: outer.top + b.bottom * hh }; };
+  // Separate LOOKING from JUDGING. Grid windows are cut by geometry, not content, so they can slice a word, hand or
+  // face (user report: a window cut "research" to "esearch" -> "invented word"). Windows only raise leads; every
+  // verdict is made on a content-aligned crop: Jev's own boxes (finds), or a unit Jev frames around the lead's spot.
+  // The "complete unit" depends on the problem: a misspelling needs its word/line, but a contradiction or a sum
+  // needs the whole page (measured: framing only the sentence dropped the chart it contradicts).
+  const CONTEXT_PROBLEMS = ["x.contradiction", "x.numbers", "x.chart"];
+  async function frameUnit(spot, key) {
+    const sheet = CONTEXT_PROBLEMS.includes(key), cx = (spot.left + spot.right) / 2, cy = (spot.top + spot.bottom) / 2;
+    let w = Math.max(sheet ? 0.55 : 0.3, (spot.right - spot.left) * 4), hh = Math.max(sheet ? 0.55 : 0.3, (spot.bottom - spot.top) * 4);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const ctx = { left: Math.max(0, cx - w / 2), top: Math.max(0, cy - hh / 2), right: Math.min(1, cx + w / 2), bottom: Math.min(1, cy + hh / 2) };
+      const { box } = await call({ mode: "find", target: sheet ? "sheet" : "unit", images: [b64(cropExact(fr.src, ctx))] }); tick();
+      if (!usable(box)) break;
+      const u = mapIn(ctx, box);
+      const touches = (box.left < .02 && ctx.left > 0) || (box.top < .02 && ctx.top > 0) || (box.right > .98 && ctx.right < 1) || (box.bottom > .98 && ctx.bottom < 1);
+      if (!touches) return u;
+      w *= 1.8; hh *= 1.8;   // the unit runs past the context crop: widen and frame again
+    }
+    return grow(spot, 1);    // fallback: the spot with generous margin
+  }
+  const judged = items.filter(it => it.kind === "find" && it.list);
+  // A window raises a lead for each strong problem it sees (top 2 at >= 0.25), not just its top one: one window can
+  // hold a misspelled title AND a text-vs-chart contradiction, and each needs its own framing.
+  const leads = items.filter(it => it.kind === "cell" && it.list && verdict(it.list, "x").total >= th - NEAR)
+    .flatMap(it => Object.entries(it.list.problems).sort((a, b) => b[1] - a[1]).slice(0, 2).filter(([, p]) => p >= 0.25)
+      .map(([k]) => ({ it, key: `x.${k}` })));
+  const scope = key => CONTEXT_PROBLEMS.includes(key) ? "sheet" : "unit";
+  await pool(leads, async ({ it, key }) => {
+    const { box } = await call({ mode: "pinpoint", problem: key, images: [b64(it.img)] }); tick();
+    if (!usable(box)) return;
+    const spot = mapIn(it.box, box), unit = await frameUnit(spot, key);
+    // already judged at this scope (a page-level contradiction isn't covered by a line-level misspelling check)
+    if (judged.some(j => j.kind === "unit" && j.scope === scope(key) && overlaps(j.box, unit))) return;
+    const img = cropCanvas(fr.src, unit);
+    const r = await call({ mode: "item", images: [b64(img)] }); tick();
+    judged.push({ box: unit, spot, kind: "unit", scope: scope(key), img, list: r.list });
+  });
+  for (const it of judged) {
     for (const [k, p] of Object.entries(it.list.problems)) scores[`x.${k}`] = Math.max(scores[`x.${k}`] ?? 0, p);
     it.verdict = verdict(it.list, "x");
   }
+  found.items = items.filter(it => it.kind === "find").length;
   // Jev is not deterministic (identical crop x5: layer 0.57-0.67, contradiction 0.39-0.49), so anything near the
   // bar is asked REPEATS more times on the same crop and averaged.
-  await pool(items.filter(it => it.verdict && it.verdict.total >= th - NEAR), async it => {
+  await pool(judged.filter(it => it.verdict.total >= th - NEAR), async it => {
     const runs = await Promise.all(Array.from({ length: REPEATS }, () => call({ mode: "item", images: [b64(it.img)] }).then(r => { tick(); return r; })));
     const totals = [it.verdict.total, ...runs.map(r => verdict(r.list, "x").total)];
     it.verdict.first = it.verdict.total;
@@ -518,19 +556,16 @@ async function analyzeFrame(fr, th, deep, tick, call) {
       it.verdict.total = (it.verdict.total + confirm) / 2;
     }
   });
-  for (const it of items) {
+  // Display only: point at the exact spot inside a flagged unit (the verdict was already made on the whole unit).
+  await pool(judged.filter(it => it.verdict.total >= th), async it => {
     const v = it.verdict;
-    if (v && v.total >= th) { flaggedSet.add(v.key); scores[v.key] = Math.max(scores[v.key] ?? 0, v.total); it.flag = v.key; }
-  }
-  // Layer 2b: a flagged grid cell gets the exact spot boxed inside it; a flagged find is already a tight box.
-  await pool(items.filter(it => it.flag), async it => {
-    let b = it.box;
-    if (it.kind === "cell") {
-      const { box } = await call({ mode: "pinpoint", problem: it.flag, images: [b64(it.img)] }); tick();
-      if (usable(box)) b = { left: it.box.left + box.left * (it.box.right - it.box.left), right: it.box.left + box.right * (it.box.right - it.box.left),
-        top: it.box.top + box.top * (it.box.bottom - it.box.top), bottom: it.box.top + box.bottom * (it.box.bottom - it.box.top) };
+    flaggedSet.add(v.key); scores[v.key] = Math.max(scores[v.key] ?? 0, v.total);
+    let spot = it.kind === "unit" && it.spot ? it.spot : null;
+    if (!spot) {
+      const { box } = await call({ mode: "pinpoint", problem: v.key, images: [b64(it.img)] }); tick();
+      if (usable(box)) spot = mapIn(padded(it.box), box);
     }
-    spotBoxes.push({ key: it.flag, ...b });
+    spotBoxes.push({ key: v.key, ...(spot && overlaps(it.box, spot) ? spot : it.box) });
   });
   for (const [k, p] of Object.entries(sceneRes.list.problems)) scores[`x.${k}`] = Math.max(scores[`x.${k}`] ?? 0, p);
   const sv = verdict(sceneRes.list, "x");
@@ -553,7 +588,7 @@ async function analyzeFrame(fr, th, deep, tick, call) {
       ? { left: l.box.left + box.left * w, right: l.box.left + box.right * w, top: l.box.top + box.top * hh, bottom: l.box.top + box.bottom * hh } : l.box) });
   });
   const flagged = [...flaggedSet], boxes = dedupe(spotBoxes);
-  return { t: fr.t, scores, flagged, boxes, found, tables: tableRes, layers: layerRes, items: items.map(({ img, ...it }) => it), scene: sceneRes.list, image: drawBoxes(fr.canvas, boxes) };
+  return { t: fr.t, scores, flagged, boxes, found, tables: tableRes, layers: layerRes, items: judged.map(({ img, ...it }) => it), scene: sceneRes.list, image: drawBoxes(fr.canvas, boxes) };
 }
 
 async function start(f) {

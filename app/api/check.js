@@ -53,6 +53,9 @@ const FIND = {
   page: "one single sheet of paper, page, card or screen (just one, not a group)",
   person: "one single person or animal (just one, not a group)",
   table: "one single table of rows and columns (just one, not a group)",
+  // frames a complete unit around a suspected spot, so verdicts are never made on a crop that cuts the thing judged
+  unit: "the single complete thing at the center: the whole sign, label, heading, line or paragraph of text, or the whole object, hand, face or person (not a part of it)",
+  sheet: "the whole sheet of paper, page, poster, slide or screen at the center (all of it, not a part)",
   object: "one single physical object that is not paper (such as glasses, a cup, a plant, a phone, a tool or furniture)",
 };
 // Row strips: Jev reads layout semantically (it "fixes" a shifted table in its head), so code cuts a table into

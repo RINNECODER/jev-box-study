@@ -112,3 +112,10 @@ One box/find call on a ~1.5k px image is about 4-5k input tokens; a tiny
 image about 676. Jev 1.14 is $0.042 per million input tokens, output free
 (checked 2026-10-14). A full scan is about 170-250 calls, 0.5-0.6M input
 tokens, about $0.02 per image; about 12 verified items per image.
+
+## Rule: separate looking from judging (v7)
+Never make a verdict on a crop cut by a fixed grid: it can slice a word ("research" -> "esearch" -> "invented word"),
+a hand or a face, and every repeat/confirm on that crop inherits the cut. Use grid windows only to raise leads; frame
+the complete unit around each lead with Box ("the single complete thing at the center ..."; the whole sheet for
+contradictions/sums), widen and reframe if the unit touches the context edge, then judge that unit. Pinpoint only
+for display, after the verdict.
