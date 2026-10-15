@@ -4,13 +4,13 @@
 Jev 1.14's Box type and image input:** what worked, what did not, why, and how
 to build with Box yourself.
 
-**4 prompt versions** · **37 checks in v1** · **raw score JSON** · **Live demo**
+**7 pipeline versions (v1–v7b)** · **raw score JSON** · **the full website code** · **two agent skills** · **Live demo**
 
 Observations from October 14, 2026. Built with Claude Code by
 [0xRinne](https://x.com/0xRinne). Independent, AI-assisted research.
 
-[Live app](https://hallucination-check.vercel.app) ·
-[Headline findings](#headline-findings) · [Timeline](#iteration-timeline-v1-to-v4) ·
+[Live app](https://hallucination-check.vercel.app) · [Current version](#current-production-v7b) · [Website code](app/) · [Skills](#skills) ·
+[Headline findings](#headline-findings-earlier-iterations) · [Timeline](#iteration-timeline-v1-to-v4) ·
 [Guidance](#building-with-jev-box) · [Evidence](#inspect-the-evidence)
 
 > **The central finding:** Jev Box localizes planted errors in documents very
@@ -20,6 +20,27 @@ Observations from October 14, 2026. Built with Claude Code by
 >
 > These are small, hand-picked evaluations on a handful of images, not a
 > benchmark or an accuracy score.
+
+## Current production: v7b
+
+What runs at https://hallucination-check.vercel.app (code in [`app/`](app/)), in order:
+
+1. **Medium** — one neutral question: photo, document/screenshot, illustration/cartoon/meme, or 3D render/game.
+   Every later judgment is told to judge by that medium's conventions ([v7b](#v7b-judge-each-image-by-its-own-medium)).
+2. **Discover (neutral)** — targeted Box searches (single sheet, table, object, person) plus close-up windows at two
+   scales. Windows only raise leads; they never decide ([v7](#v7-judge-only-whole-things-separate-looking-from-judging)).
+3. **Frame whole units** — each lead is framed by Jev as a complete unit (line, sign, hand, object; the whole sheet for
+   contradictions and sums) before any verdict.
+4. **Judge** — one flat list per unit: "everything is correct" + 28 hallucination types + "can't tell"; answers near
+   the bar are asked 3x and averaged (Jev is not deterministic); flags are confirmed with a second-format yes/no
+   that names normal look-alikes ([v6](#v6-the-version-that-works)).
+5. **Special checks** — layering (text printed over the wrong sheet: two wordings averaged on fixed windows) and
+   misaligned tables (row strips; unreliable — a Jev 1.14 geometry limit).
+6. **Show** — pinpoint the exact spot only after the verdict, merge duplicate boxes, report cost.
+
+Status (October 14, 2026): office ground-truth image 4 of 6 caught with tight boxes; Gru cartoon meme 0 flags (was
+"malformed hand" 0.88 and "invented word"); one targeted run each. The 26-photo false-flag set was **not** re-run for
+v7/v7b (it was 0 of 26 on v6). About $0.02 per image.
 
 ## The website
 
@@ -80,7 +101,7 @@ image "Overlapping Office Reports on a Desk":
 
 The app reports hallucinations only. An earlier whole-image "AI likelihood" score (one yes/no noul) was removed: it wasn't accurate enough to show.
 
-**Final v6 result (production):** 4 of 6 caught in 3 of 3 runs: #1, #2, #3 and
+**Final v6 result (production until v7b):** 4 of 6 caught in 3 of 3 runs: #1, #2, #3 and
 #6 (the layering word boxed exactly). #4 and #5 (table misalignment) were not
 caught. Real photos (26 Wikimedia Commons, including busy scenes): 0 of 26
 falsely flagged. Planted-error documents: all caught. Cost is about $0.02 per
