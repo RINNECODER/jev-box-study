@@ -50,6 +50,19 @@ exact spot (title, octopus sentence, Key Takeaways line, "Total"); $0.022, 185 c
 table (#5) was boxed correctly too. A synthetic clean meme with words placed under window edges produced no flags,
 but no window raised a lead there either, so it does not prove the cut-word path; the real meme is the test to rerun.
 
+### v7b: judge each image by its own medium
+
+A cartoon meme (Gru) was flagged "malformed hand" 0.88 (confirm 0.80): every check assumed photo rules (five
+fingers, real joints), and a cartoon's simplified hands broke them; the same meme's deliberately mixed fonts had
+been read as an invented word. Root fix: one neutral question first, "what kind of image is this?" (photo /
+document or screenshot / illustration, cartoon or meme / 3D render or game); the medium is then passed to every
+judgment: the list question says "judge it by the normal conventions of that kind of image", and both the list's
+"everything is correct" option and the confirm question's look-alikes include that medium's conventions (e.g.
+"stylised anatomy, cartoon hands with four fingers, and deliberately mixed or playful fonts are part of the art").
+Medium context in the confirm question alone was not enough (hand 0.84 still flagged); adding it to the list's
+"everything is correct" option took the meme to 0 flags. Office image (read as a photo of papers) still 4 of 6.
+One targeted run each, not the full evaluation.
+
 ## v6: the version that works
 
 Ground truth: the author (a human) found 6 hallucinations in the AI office

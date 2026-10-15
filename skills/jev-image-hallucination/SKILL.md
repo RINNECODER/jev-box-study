@@ -119,3 +119,8 @@ a hand or a face, and every repeat/confirm on that crop inherits the cut. Use gr
 the complete unit around each lead with Box ("the single complete thing at the center ..."; the whole sheet for
 contradictions/sums), widen and reframe if the unit touches the context edge, then judge that unit. Pinpoint only
 for display, after the verdict.
+
+## Rule: judge by medium (v7b)
+Ask the medium first (photo / document or screenshot / illustration, cartoon or meme / 3D render or game) and pass it
+to every judgment. Put the medium's conventions into the list's "everything is correct" option, not just the
+confirm question: photo rules (five fingers, real joints, consistent fonts) misjudge cartoons and memes.

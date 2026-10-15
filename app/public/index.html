@@ -434,7 +434,10 @@ function drawBoxes(canvas, boxes) {
 // Layer 1 (neutral): find every distinct thing, section by section, graying out each find.
 // Layer 2: one call per thing on an enlarged crop: classify it and ask every category's checks at once;
 // only the checks of its category (plus object contact/form for physical things) count.
-async function analyzeFrame(fr, th, deep, tick, call) {
+async function analyzeFrame(fr, th, deep, tick, callRaw) {
+  // Medium first (photo / document / illustration / render), then every judgment carries it as context.
+  const { medium } = await callRaw({ mode: "medium", images: [fr.b64] }); tick();
+  const call = body => callRaw(["item", "confirm", "scene"].includes(body.mode) ? { ...body, medium } : body);
   // Layer 1a: targeted box searches on the whole image (pages, objects, people), graying out each find.
   // Boxes covering most of the image are useless crops, so they count as misses.
   const finds = [], tables = [], pages = [];
@@ -588,7 +591,7 @@ async function analyzeFrame(fr, th, deep, tick, call) {
       ? { left: l.box.left + box.left * w, right: l.box.left + box.right * w, top: l.box.top + box.top * hh, bottom: l.box.top + box.bottom * hh } : l.box) });
   });
   const flagged = [...flaggedSet], boxes = dedupe(spotBoxes);
-  return { t: fr.t, scores, flagged, boxes, found, tables: tableRes, layers: layerRes, items: judged.map(({ img, ...it }) => it), scene: sceneRes.list, image: drawBoxes(fr.canvas, boxes) };
+  return { t: fr.t, medium, scores, flagged, boxes, found, tables: tableRes, layers: layerRes, items: judged.map(({ img, ...it }) => it), scene: sceneRes.list, image: drawBoxes(fr.canvas, boxes) };
 }
 
 async function start(f) {
@@ -721,7 +724,7 @@ function render(card, r, th) {
     img.src = f.image;
     img.alt = r.file + (r.video ? ` at ${f.t}s` : "");
     chips.innerHTML = r.video ? `<div class="label">Frame at ${f.t}s</div>` : "";
-    if (f.found?.items) { const s = document.createElement("div"); s.className = "seen"; s.textContent = `Checked ${f.found.items} items plus close-ups of the whole image`; chips.append(s); }
+    if (f.found?.items) { const s = document.createElement("div"); s.className = "seen"; s.textContent = `Read as ${({ photo: "a photo", document: "a document or screenshot", illustration: "an illustration, cartoon or meme", render: "a 3D render or game" })[f.medium] || "an image"} · checked ${f.found.items} items plus close-ups`; chips.append(s); }
     for (const [g, title] of Object.entries(GROUPS)) {
       const rows = Object.entries(f.scores).filter(([k]) => CHECK_GROUP[k] === g).sort((a, b) => b[1] - a[1]);
       if (!rows.length) continue;

@@ -6,6 +6,7 @@
 //   row:   what is physically on one thin strip of a table (for misaligned-table detection)
 //   layer: is text from a lower sheet printed over the top sheet (two wordings averaged)
 //   confirm: specific yes/no for a flagged hallucination type, naming normal look-alikes
+//   medium: photo / document / illustration / render, asked once; passed to item, confirm and scene as context
 //   scene: whole-image list question (no AI-likelihood score: it wasn't accurate)
 //   pair:  two consecutive video frames
 const API = "https://api.typesafe.ai/v1/systemone";
@@ -84,6 +85,19 @@ const LAYER = {
 const LOOK_ALIKES = "Real photos and documents often look unusual without being wrong: helmets, masks, costumes and props; stylised or decorative fonts, " +
   "real brand names, other languages and abbreviations; hands, fingers and objects partly hidden, angled, blurred or cut off by the frame; " +
   "reflections in curved or textured surfaces.";
+// Medium: what kind of image this is, asked once, neutrally, then passed to every judgment as context. Checks built
+// for photos misjudge art (a cartoon's four-finger hand read as "malformed hand" 0.88; a meme's deliberately mixed
+// fonts read as an invented word), so each item is judged by its own medium's conventions.
+const MEDIA = {
+  photo: ["a real photograph", ""],
+  document: ["a document, screenshot, slide or web page", "This is a document or screenshot: interface elements, logos, icons and formatting are normal."],
+  illustration: ["an illustration, cartoon, animation still, comic or meme",
+    "This is a drawing, cartoon, animation still or meme: stylised anatomy (simplified hands, cartoon hands with four fingers, exaggerated faces and bodies) and deliberately mixed or playful fonts are part of the art, not hallucinations."],
+  render: ["a 3D render, video-game or CGI scene", "This is a 3D render or game scene: stylised materials, proportions and characters are part of the style."],
+};
+const MEDIUM_Q = { type: "choice", instructions: "What kind of image is `img`?",
+  criteria: Object.fromEntries(Object.values(MEDIA).map(([d]) => [d, d])) };
+const mediumOf = req => MEDIA[req.body.medium] ? req.body.medium : "photo";
 const CORRECT = "everything is correct", UNSURE = "can't tell";
 // Normal look-alikes from the research, so busy real photos have a correct answer to choose.
 const NORMAL = "everything looks like a real, coherent thing; blur, motion, glare, retouching, lens distortion, " +
@@ -94,8 +108,8 @@ const TEMPORAL = {
   pop: ["Popping", "something vanishes or appears out of nowhere between the frames"],
 };
 
-const listQ = (instructions, problems) => ({ type: "choice", instructions,
-  criteria: { [CORRECT]: NORMAL, ...Object.fromEntries(Object.values(problems).map(([l, d]) => [l, d])),
+const listQ = (instructions, problems, mediumNormal = "") => ({ type: "choice", instructions,
+  criteria: { [CORRECT]: `${NORMAL}${mediumNormal ? `. ${mediumNormal}` : ""}`, ...Object.fromEntries(Object.values(problems).map(([l, d]) => [l, d])),
     [UNSURE]: "it's too small, blurry or covered to judge" } });
 // Split a list answer into correct / unsure / each problem slug.
 const split = (problems, a) => ({ correct: a.probabilities[CORRECT] ?? 0, unsure: a.probabilities[UNSURE] ?? 0,
@@ -182,7 +196,7 @@ export default async function handler(req, res) {
   const { mode, images } = req.body || {};
   const want = mode === "pair" ? 2 : 1;
   if (mode === "pinpoint" && !PROBLEMS[req.body.problem]) return res.status(400).json({ error: "Bad request" });
-  if (!["find", "item", "scene", "pair", "pinpoint", "row", "istable", "layer", "confirm"].includes(mode) || !Array.isArray(images) || images.length !== want || !images.every(isJpeg))
+  if (!["find", "item", "scene", "pair", "pinpoint", "row", "istable", "layer", "confirm", "medium"].includes(mode) || !Array.isArray(images) || images.length !== want || !images.every(isJpeg))
     return res.status(400).json({ error: "Bad request" });
 
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "unknown";
@@ -199,12 +213,18 @@ export default async function handler(req, res) {
       const ans = await jevU({ img: images[0] }, { b: { type: "box", instructions: `${target} in \`img\` that is not covered by a gray rectangle. ${MASKED}` } });
       return res.json({ box: ans.b.box, confidence: ans.b.confidence });
     }
+    if (mode === "medium") {
+      const ans = await jevU({ img: images[0] }, { m: MEDIUM_Q });
+      const byDesc = Object.fromEntries(Object.entries(MEDIA).map(([k, [d]]) => [d, k]));
+      const p = Object.fromEntries(Object.entries(ans.m.probabilities).map(([d, v]) => [byDesc[d], round(v)]));
+      return res.json({ medium: Object.entries(p).sort((a, b) => b[1] - a[1])[0][0], probabilities: p });
+    }
     if (mode === "confirm") {
       const k = String(req.body.problem || "").replace(/^x\./, "");
       if (!FLAT[k]) return res.status(400).json({ error: "Bad request" });
       const [l, d] = FLAT[k];
       const ans = await jevU({ img: images[0] }, { c: { type: "noul",
-        instructions: { look_alikes_that_are_fine: LOOK_ALIKES, question: `Look closely at \`img\`. Is this really present: ${l.toLowerCase()} (${d})?` },
+        instructions: { medium: MEDIA[mediumOf(req)][0], look_alikes_that_are_fine: `${LOOK_ALIKES} ${MEDIA[mediumOf(req)][1]}`.trim(), question: `Look closely at \`img\`. Is this really present: ${l.toLowerCase()} (${d})?` },
         criteria: { true: "clearly present, and not one of the fine look-alikes", false: "not present, or only a normal look-alike" } } });
       return res.json({ confirm: round(ans.c.noul) });
     }
@@ -230,13 +250,15 @@ export default async function handler(req, res) {
     }
     if (mode === "item") {
       // one flat list for every item, plus "is this mostly text?" so close-up windows can stick to text
-      const ans = await jevU({ img: images[0] }, { list: listQ("Look closely at `img`. Which best describes it?", FLAT),
+      const m = mediumOf(req);
+      const ans = await jevU({ img: images[0] }, { list: listQ(`\`img\` is part of ${MEDIA[m][0]}. Judge it by the normal conventions of that kind of image. Look closely at \`img\`. Which best describes it?`, FLAT, MEDIA[m][1]),
         text: { type: "noul", instructions: "`img` mainly shows printed or written text, a table or a chart.",
           criteria: { true: "mostly text, a table or a chart", false: "mostly objects, people, animals or scenery" } } });
       return res.json({ list: split(FLAT, ans.list), text: round(ans.text.noul) });
     }
     if (mode === "scene") {
-      const ans = await jevU({ img: images[0] }, { scene: listQ("Look at the whole of `img`. Which best describes it?", FLAT) });
+      const m = mediumOf(req);
+      const ans = await jevU({ img: images[0] }, { scene: listQ(`\`img\` is ${MEDIA[m][0]}. Judge it by the normal conventions of that kind of image. Look at the whole of \`img\`. Which best describes it?`, FLAT, MEDIA[m][1]) });
       return res.json({ list: split(FLAT, ans.scene) });
     }
     const ans = await jevU({ a: images[0], b: images[1] }, { pair: listQ("Compare frame `a` with the next frame `b` of a video. Which best describes the change?", TEMPORAL) });
